@@ -17,12 +17,18 @@ See the [brms site](https://paul-buerkner.github.io/brms/) for installation inst
 ```{r}
 library(tidyverse)
 library(brms)
-library(scico)
+library(glue)
+library(lisa)
 theme_set(theme_classic())
-group_col <- c(Control="grey70", Acclimation="#9970ab", Experiment="#1b7837")
+group_col <- c(Control="#B68E52", Acclimation="#697A55", Experiment="#8399B3")
+cmr.ls <- readRDS("figs/cmr_cmaps.RDS")
 ```
 
 
+```{r}
+mod_type <- c("RI", "RS")[2]
+sp <- c("ZF", "Tilapia")[2]
+```
 
 
 
@@ -30,7 +36,7 @@ group_col <- c(Control="grey70", Acclimation="#9970ab", Experiment="#1b7837")
 # load data 
 
 ```{r}
-data.df <- readxl::read_xlsx(dir("data", "ZF_Data_matrix", full.names=T),
+data.df <- readxl::read_xlsx(dir("data", glue("{sp}_Data_matrix"), full.names=T),
                              1, col_types=c(rep("numeric", 6), "skip", "skip")) %>%
   mutate(ln_FishCount=log(FishCount+1),
          cos_ZT=cos(2*pi*ZT/24),
@@ -84,7 +90,7 @@ wtChamber.df %>%
   facet_wrap(~Group) +
   ylim(1, 5) +
   labs(x="ZT", y="Preferred chamber") + 
-  scale_colour_brewer(type="qual", palette=2)
+  scale_colour_manual(values=lisa$MarcChagall[c(2,3,4)])
 
 wtChamber.df %>%
   ggplot(aes(ZT, colour=Tank, fill=Tank)) + 
@@ -93,8 +99,9 @@ wtChamber.df %>%
               method="lm", formula=y~cos(2*pi*x/24) + sin(2*pi*x/24)) +
   facet_wrap(~Group) +
   ylim(1, 5) +
-  labs(x="ZT", y="Preferred chamber") + 
-  scale_colour_brewer(type="qual", palette=2)
+  labs(x="ZT", y="Preferred chamber (observed)") +
+  scale_colour_manual(values=lisa$MarcChagall[c(2,3,4)]) + 
+  scale_fill_manual(values=lisa$MarcChagall[c(2,3,4)])
 
 wtChamber.df %>%
   ggplot(aes(ZT, colour=Group, fill=Group)) + 
@@ -103,7 +110,7 @@ wtChamber.df %>%
               method="lm", formula=y~cos(2*pi*x/24) + sin(2*pi*x/24)) +
   facet_wrap(~Tank) +
   ylim(1, 5) +
-  labs(x="ZT", y="Preferred chamber") +
+  labs(x="ZT", y="Preferred chamber (observed)") +
   scale_fill_manual(values=group_col) +
   scale_colour_manual(values=group_col)
 
@@ -112,23 +119,28 @@ ggplot(data.df, aes(sin_ZT, ln_FishCount, colour=Tank)) +
   geom_point(shape=1, alpha=0.5) +
   stat_smooth(method="lm", aes(group=Tank)) + 
   facet_grid(Group~Chamber)  + 
-  scale_colour_brewer(type="qual", palette=2)
+  scale_colour_manual(values=lisa$MarcChagall[c(2,3,4)])
 
 ggplot(data.df, aes(cos_ZT, ln_FishCount, colour=Tank)) + 
   geom_point(shape=1, alpha=0.5) +
   stat_smooth(method="lm", aes(group=Tank)) + 
   facet_grid(Group~Chamber)  + 
-  scale_colour_brewer(type="qual", palette=2)
+  scale_colour_manual(values=lisa$MarcChagall[c(2,3,4)])
 
 
 data.df %>% 
   group_by(ZT, Group, Chamber) %>%
   summarise(mnFish=mean(FishCount, na.rm=T)) %>%
   ggplot(aes(ZT, Chamber, colour=mnFish, fill=mnFish)) + 
-  geom_tile() + 
+  geom_raster(interpolate=T) +
   facet_wrap(~Group) +
-  scale_colour_viridis_c("Mean fish count") +
-  scale_fill_viridis_c("Mean fish count")
+  scale_fill_gradientn("Mean observed count", 
+                       colours=lisa_palette("KatsushikaHokusai", 1e3, "continuous")) +
+  guides(fill=guide_colourbar(title.position="top", title.hjust=0.5)) +
+  theme(legend.position="bottom",
+        legend.key.width=unit(1, "cm")) + 
+  ggtitle(sp)
+ggsave(glue("figs/heatmap_observed_mean_{sp}.png"), height=4, width=8, dpi=300)
 ```
 
 
@@ -142,21 +154,31 @@ data.df %>%
 # remove NAs
 data.noNA <- data.df %>% filter(complete.cases(.))
 
-# fit model
-RI.out <- brm(ln_FishCount ~ cos_ZT + sin_ZT +
-                cos_ZT:Chamber:Group + 
-                sin_ZT:Chamber:Group + 
-                (1|Tank),
-              prior=set_prior("normal(0,2)"), 
-              control=list(adapt_delta=0.95, max_treedepth=20),
-              iter=3000, warmup=2000,
-              data=data.noNA, cores=4, refresh=500,
-              save_model="models/harmonic_randInt.stan",
-              file="models/harmonic_randInt")
+if(mod_type=="RI") {
+  mod.form <- bf(ln_FishCount ~ 
+                        I(cos(6.283185*ZT/24))*Chamber*Group + 
+                        I(sin(6.283185*ZT/24))*Chamber*Group + 
+                        (1|Tank))
+} else {
+  mod.form <- bf(ln_FishCount ~ 
+                        I(cos(6.283185*ZT/24))*Chamber*Group + 
+                        I(sin(6.283185*ZT/24))*Chamber*Group + 
+                        (1 + I(cos(6.283185*ZT/24)) +
+                           I(sin(6.283185*ZT/24)) + Chamber + Group||Tank))
+}
 
-pp_check(RI.out)
-summary(RI.out) 
-bayes_R2(RI.out)
+# fit model
+out <- brm(mod.form,
+           prior=set_prior("normal(0,2)"), 
+           control=list(adapt_delta=0.99, max_treedepth=20),
+           iter=3000, warmup=2000, init=0,
+           data=data.noNA, cores=4, refresh=50,
+           save_model=glue("models/mod_{mod_type}.stan"),
+           file=glue("models/out_{mod_type}_{sp}"))
+
+pp_check(out)
+summary(out) 
+bayes_R2(out)
 ```
 
 
@@ -169,9 +191,9 @@ bayes_R2(RI.out)
 cos(...): -1 at 12h, 1 at 0h
 sin(...): -1 at 18h, 1 at 6h
 ```{r}
-conditional_effects(RI.out, effects="cos_ZT:Group", 
-                    conditions=data.frame(Chamber=levels(data.df$Chamber)))
-conditional_effects(RI.out, effects="sin_ZT:Group", 
+conditional_effects(out, effects="ZT:Chamber", 
+                    conditions=data.frame(Group=levels(data.df$Group)))
+conditional_effects(out, effects="ZT:Group", 
                     conditions=data.frame(Chamber=levels(data.df$Chamber)))
 ```
 
@@ -181,7 +203,7 @@ conditional_effects(RI.out, effects="sin_ZT:Group",
 # Predicted patterns
 
 ```{r}
-pred.lFish <- posterior_epred(RI.out, newdata=data.df)
+pred.lFish <- posterior_epred(out, newdata=data.df)
 pred.Fish <- exp(pred.lFish)-1
 out.df <- data.df %>%
   mutate(pred.mn=apply(pred.Fish, 2, median),
@@ -195,23 +217,23 @@ out.df <- data.df %>%
 ```{r}
 heatmap.df <- expand_grid(ZT=unique(data.df$ZT),
                           Chamber=unique(data.df$Chamber),
-                          Group=unique(data.df$Group)) %>%
-  mutate(cos_ZT=cos(2*pi*ZT/24),
-         sin_ZT=sin(2*pi*ZT/24))
-heatmap.pred <- exp(posterior_epred(RI.out, newdata=heatmap.df, re.form=NA))-1
+                          Group=unique(data.df$Group)) 
+heatmap.pred <- exp(posterior_epred(out, newdata=heatmap.df, re.form=NA))-1
 heatmap.df <- heatmap.df %>%
-  mutate(pred.mn=apply(heatmap.pred, 2, mean),
+  mutate(pred.mn=apply(heatmap.pred, 2, median),
          pred.q025=apply(heatmap.pred, 2, function(x) quantile(x, 0.025)),
          pred.q975=apply(heatmap.pred, 2, function(x) quantile(x, 0.975)))
 
 ggplot(heatmap.df, aes(ZT, Chamber, fill=pred.mn)) + 
-  geom_tile() +
+  geom_raster(interpolate=T) +
   facet_wrap(~Group) +
-  scale_fill_viridis_c("Mean predicted count") + 
+  scale_fill_gradientn("Mean observed count", 
+                       colours=lisa_palette("KatsushikaHokusai", 1e3, "continuous")) +
   guides(fill=guide_colourbar(title.position="top", title.hjust=0.5)) +
   theme(legend.position="bottom",
-        legend.key.width=unit(1, "cm"))
-ggsave("figs/heatmap_posterior_mean.png", height=4, width=8, dpi=300)
+        legend.key.width=unit(1, "cm")) + 
+  ggtitle(sp)
+ggsave(paste0("figs/heatmap_posterior_mean", sp, ".png"), height=4, width=8, dpi=300)
 
 prefChamber.df_epred <- t(heatmap.pred) %>% as_tibble() %>%
   mutate(id=row_number()) %>%
@@ -221,7 +243,7 @@ prefChamber.df_epred <- t(heatmap.pred) %>% as_tibble() %>%
   mutate(Chamber=as.numeric(Chamber)) %>%
   summarise(wtChamber=sum(Chamber*predFish)/sum(predFish)) %>%
   group_by(ZT, Group) %>%
-  summarise(pred.mn=mean(wtChamber),
+  summarise(pred.mn=median(wtChamber),
             pred.q025=quantile(wtChamber, 0.025),
             pred.q05=quantile(wtChamber, 0.25),
             pred.q95=quantile(wtChamber, 0.75),
@@ -238,15 +260,19 @@ prefChamber.df_epred %>%
 
 prefChamber.df_epred %>%
   ggplot(aes(ZT, colour=Group)) + 
-  geom_point(aes(y=pred.mn), size=1) + 
-  geom_linerange(aes(ymin=pred.q05, ymax=pred.q95), size=1) +
-  geom_linerange(aes(ymin=pred.q025, ymax=pred.q975), size=0.5) +
+  geom_point(aes(y=pred.mn), shape=1) + 
+  geom_linerange(aes(ymin=pred.q05, ymax=pred.q95), size=0.5) +
+  geom_errorbar(aes(ymin=pred.q025, ymax=pred.q975), size=0.25, width=0.2) +
   ylim(1, 5) +
   labs(x="ZT", y="Preferred chamber") +
   scale_fill_manual(values=group_col) +
-  scale_colour_manual(values=group_col)
+  scale_colour_manual(values=group_col) + 
+  theme(legend.position=c(0.85, 0.15), 
+        legend.title=element_blank()) +
+  ggtitle(sp)
+ggsave(paste0("figs/preferred_chamber_mnOnly", sp, ".png"), width=5, height=5, dpi=300)
 
-prefChamber.sum_epred %>%
+prefChamber.df_epred %>%
   ggplot(aes(ZT, colour=Group, fill=Group)) + 
   geom_jitter(data=wtChamber.df, aes(y=wtChamber, shape=Group),
               alpha=0.5, size=0.5) +
@@ -257,15 +283,16 @@ prefChamber.sum_epred %>%
   scale_fill_manual(values=group_col) +
   scale_colour_manual(values=group_col) + 
   theme(legend.position=c(0.85, 0.15), 
-        legend.title=element_blank())
-ggsave("figs/preferred_chamber.png", width=5, height=5, dpi=300)
+        legend.title=element_blank()) +
+  ggtitle(sp)
+ggsave(paste0("figs/preferred_chamber", sp, ".png"), width=5, height=5, dpi=300)
 
-prefChamber.sum_epred %>%
+prefChamber.df_epred %>%
   ggplot(aes(ZT, colour=Group, fill=Group)) + 
   geom_point(data=wtChamber.sum, aes(y=mn, shape=Group), alpha=0.75, size=0.75, 
-             position=position_dodge(width=0.4)) +
+             position=position_dodge(width=0.45)) +
   geom_errorbar(data=wtChamber.sum, aes(ymin=mn-se, ymax=mn+se), size=0.25,
-                width=0.3, position=position_dodge(width=0.4)) +
+                width=0.3, position=position_dodge(width=0.45)) +
   geom_line(aes(y=pred.mn)) + 
   geom_ribbon(aes(ymin=pred.q025, ymax=pred.q975), colour=NA, alpha=0.5) +
   ylim(1, 5) +
@@ -273,59 +300,30 @@ prefChamber.sum_epred %>%
   scale_fill_manual(values=group_col) +
   scale_colour_manual(values=group_col) + 
   theme(legend.position=c(0.85, 0.15), 
-        legend.title=element_blank())
-ggsave("figs/preferred_chamber_tankMeans.png", width=5, height=5, dpi=300)
+        legend.title=element_blank()) +
+  ggtitle(sp)
+ggsave(paste0("figs/preferred_chamber_tankMeans", sp, ".png"), width=5, height=5, dpi=300)
 
-ggplot(out.df, aes(ZT, pred.mn, colour=Group, fill=Group, group=paste(Group, Tank))) + 
-  geom_point(aes(y=FishCount), shape=1, alpha=0.5) +
+ggplot(heatmap.df, aes(Chamber, pred.mn, colour=Group, fill=Group, group=Group)) + 
   geom_line() +
   geom_ribbon(aes(ymin=pred.q025, ymax=pred.q975), alpha=0.25, colour=NA) +
-  facet_wrap(~Chamber) + 
-  ylim(0, NA) +
-  theme(legend.position=c(0.8, 0.2)) +
-  labs(x="ZT", y="FishCount") +
-  scale_fill_manual(values=group_col) +
-  scale_colour_manual(values=group_col)
-
-ggplot(out.df, aes(cumZT, pred.mn, colour=Group, fill=Group, group=paste(Group, Tank))) + 
-  geom_point(aes(y=FishCount), shape=1, alpha=0.5) +
-  geom_line() +
-  geom_ribbon(aes(ymin=pred.q05, ymax=pred.q95), alpha=0.25, colour=NA) +
-  facet_wrap(~Chamber) + 
-  ylim(0, NA) +
-  theme(legend.position=c(0.8, 0.2)) +
-  labs(x="ZT", y="FishCount") +
-  scale_fill_manual(values=group_col) +
-  scale_colour_manual(values=group_col)
-
-ggplot(out.df, aes(ZT, pred.lmn, colour=Group, fill=Group, group=paste(Group, Tank))) + 
-  geom_point(aes(y=ln_FishCount), shape=1, alpha=0.5) +
-  geom_line() +
-  geom_ribbon(aes(ymin=pred.lq025, ymax=pred.lq975), alpha=0.25, colour=NA) +
-  facet_wrap(~Chamber) +
-  theme(legend.position=c(0.8, 0.2)) +
-  labs(x="ZT", y="ln FishCount") +
-  scale_fill_manual(values=group_col) +
-  scale_colour_manual(values=group_col)
-
-ggplot(out.df, aes(Chamber, pred.mn, colour=Group, fill=Group, group=paste(Group, Tank))) + 
-  geom_line() +
-  geom_ribbon(aes(ymin=pred.q025, ymax=pred.q975), alpha=0.25, colour=NA) +
-  facet_wrap(~ZT) + 
+  facet_wrap(~ZT, nrow=4) + 
   ylim(0, NA) +
   scale_fill_manual(values=group_col) +
-  scale_colour_manual(values=group_col)
+  scale_colour_manual(values=group_col) +
+  labs(title=sp, y="Number of fish (fitted mean, 95% CI)")
 
 
-out.df %>% 
+heatmap.df %>% 
   group_by(Chamber, ZT, Group) %>%
   summarise(mn=mean(pred.mn)) %>%
   ggplot(aes(as.numeric(Chamber), mn, colour=ZT, group=ZT)) + 
   geom_line() +
   facet_wrap(~Group) +
-  scale_colour_viridis_c(limits=c(0, 24), breaks=c(0, 6, 12, 18, 24)) + 
-  ylim(0, NA)
-
+  scale_colour_gradientn(colours=cmr.ls$seasons) +
+  ylim(0, NA) +
+  labs(title=sp, x="Chamber", y="Number of fish (fitted mean)")
+ggsave(paste0("figs/tube_plots_", sp, ".png"), width=8, height=4, dpi=300)
 ```
 
 
