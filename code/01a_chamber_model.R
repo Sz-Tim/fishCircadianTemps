@@ -9,7 +9,7 @@
 # switches ----------------------------------------------------------------
 
 species <- c("ZF", "Tilapia")[1]
-mod_type <- c("RI", "RS_ZTonly", "RS_noInteractions", "RS_all")[2]
+mod_type <- c("RI", "RS")[2]
 iter <- 2000
 warmup <- 1000
 chains <- 4
@@ -23,8 +23,8 @@ library(tidyverse)
 library(brms)
 library(glue)
 
-data.df <- dir("data", glue("{species}_.*RawData2"), full.names=T) %>%
-  readxl::read_xlsx(., 1, col_types=c(rep("numeric", 6), "skip", "skip")) %>%
+data.df <- readxl::read_xlsx(dir("data", glue("{species}_.*RawData2"), full.names=T),
+                             1, col_types=c(rep("numeric", 6), "skip", "skip")) %>%
   mutate(ln_FishCount=log(FishCount+1),
          cos_ZT=cos(2*pi*ZT/24),
          sin_ZT=sin(2*pi*ZT/24),
@@ -32,7 +32,12 @@ data.df <- dir("data", glue("{species}_.*RawData2"), full.names=T) %>%
          Group=factor(Group, 
                       levels=c(3, 1, 2), 
                       labels=c("Control", "Acclimation", "Experiment")),
-         Tank=factor(Tank))
+         Tank=factor(Tank)) %>%
+  left_join(read_csv(glue("data/temp_{species}.csv")) %>%
+              pivot_longer(starts_with("chamber_"), names_to="Chamber", values_to="Temp") %>%
+              mutate(Chamber=factor(str_sub(Chamber, -1, -1)),
+                     Group=factor(Group, levels=c("Control", "Acclimation", "Experiment")))) %>%
+  mutate(GrpDay=factor(paste(as.numeric(Group), str_pad(Days, 2, "l", "0"), sep="_")))
 
 
 
@@ -40,22 +45,14 @@ data.df <- dir("data", glue("{species}_.*RawData2"), full.names=T) %>%
 
 data.noNA <- data.df %>% filter(complete.cases(.))
 
-form.fixed <- bf(ln_FishCount ~ I(cos(6.283185*ZT/24))*Chamber*Group + 
-                   I(sin(6.283185*ZT/24))*Chamber*Group)
-mod.form <- switch(
-  mod_type,
-  RI=update(form.fixed,
-            ~. + (1|Tank)),
-  RS_ZTonly=update(form.fixed, 
-                   ~. + (1 + I(cos(6.283185*ZT/24)) +
-                           I(sin(6.283185*ZT/24))|Tank)),
-  RS_noInteractions=update(form.fixed, 
-                           ~. + (1 + I(cos(6.283185*ZT/24)) +
-                                   I(sin(6.283185*ZT/24)) +
-                                   Chamber + Group|Tank)),
-  RS_all=update(form.fixed, 
-                ~. + (1 + I(cos(6.283185*ZT/24))*Chamber*Group + 
-                        I(sin(6.283185*ZT/24))*Chamber*Group|Tank))) 
+mod.terms <- c("I(cos(6.283185*ZT/24))", 
+               "I(sin(6.283185*ZT/24))",
+               "Chamber", 
+               "Group")
+mod.rand <- ifelse(mod_type=="RI", 
+                   "(1|Tank) + (1|GrpDay)",
+                   paste0("(1+", paste0(mod.terms, collapse="*"), "|Tank)", 
+                          " + (1|GrpDay)"))
 
 priors <- c(prior(normal(0, 2), class="b"),
             prior(normal(0, 2), class="Intercept"),
@@ -64,7 +61,10 @@ priors <- c(prior(normal(0, 2), class="b"),
 
 # fit model ---------------------------------------------------------------
 
-out <- brm(bf(mod.form, sigma ~ Group),
+out <- brm(bf(paste("ln_FishCount ~", 
+                    paste0(mod.terms, collapse="*"),
+                    "+", mod.rand), 
+              sigma ~ Group),
            prior=priors, 
            control=stan_args,
            iter=iter, warmup=warmup, init=0,
