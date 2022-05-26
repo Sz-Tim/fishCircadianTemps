@@ -50,9 +50,8 @@ mod.terms <- c("I(cos(6.283185*ZT/24))",
                "Chamber", 
                "Group")
 mod.rand <- ifelse(mod_type=="RI", 
-                   "(1|Tank) + (1|GrpDay)",
-                   paste0("(1+", paste0(mod.terms, collapse="*"), "|Tank)", 
-                          " + (1|GrpDay)"))
+                   "(1|Tank)",
+                   paste0("(1+", paste0(mod.terms, collapse="*"), "|Tank)"))
 
 priors <- c(prior(normal(0, 2), class="b"),
             prior(normal(0, 2), class="Intercept"),
@@ -69,5 +68,5 @@ out <- brm(bf(paste("ln_FishCount ~",
            control=stan_args,
            iter=iter, warmup=warmup, init=0,
            data=data.noNA, cores=chains, refresh=50,
-           save_model=glue("models/mod_{mod_type}.stan"),
-           file=glue("models/out_{mod_type}_{species}"))
+           save_model=glue("models/mod_count_{mod_type}_{species}.stan"),
+           file=glue("models/out_count_{mod_type}_{species}"))

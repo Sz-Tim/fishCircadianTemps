@@ -75,5 +75,5 @@ out <- brm(bf(paste("prefTemp ~",
            control=list(adapt_delta=0.99, max_treedepth=20),
            iter=3000, warmup=2000, init=0,
            data=data.noNA, cores=4, refresh=50,
-           save_model=glue("models/mod_temperature_{mod_type}.stan"),
-           file=glue("models/out_temperature_{species}"))
+           save_model=glue("models/mod_temperature_{mod_type}_{species}.stan"),
+           file=glue("models/out_temperature_{mod_type}_{species}"))
