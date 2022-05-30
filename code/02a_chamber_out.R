@@ -8,7 +8,7 @@
 
 # switches ----------------------------------------------------------------
 
-species <- c("ZF", "Tilapia")[1]
+species <- c("ZF", "Tilapia")[2]
 mod_type <- c("RI", "RS")[2]
 
 
@@ -127,17 +127,60 @@ data.df %>%
 ggsave(glue("figs/heatmap_observed_mean_{species}.png"), 
        height=4, width=8, dpi=300)
 
+pred.ls <- pred.df %>% 
+  filter(!is.na(FishCount)) %>% 
+  group_by(Group) %>%
+  group_split()
+temp.heat <- map(pred.ls, ~.x %>%
+                   select(FishCount, ZT, Group, Temp) %>% 
+                   mutate(FishCount=round(FishCount)) %>% 
+                   uncount(FishCount) %>% 
+                   ggplot(aes(ZT, Temp)) +
+                   geom_density2d_filled(colour=NA, bins=20) + 
+                   scale_fill_manual(values=lisa_palette("KatsushikaHokusai", 20, "continuous"),
+                                     guide="none") +
+                   ylim(temp_rng[1], temp_rng[2]) + 
+                   facet_wrap(~Group) + 
+                   labs(y="", title=" "))
+temp.heat[[1]] <- temp.heat[[1]] + 
+  labs(title=paste0(species, ": Observed"), y="Temperature")
+ggpubr::ggarrange(plotlist=temp.heat, nrow=1)
+ggsave(glue("figs/heatmap_observed_temp_{species}.png"), 
+       height=3, width=8, dpi=300)
+
+pred.ls <- pred.df %>% 
+  mutate(pred.mn=colMeans(pred.Fish)) %>%
+  group_by(Group) %>%
+  group_split()
+temp.heat <- map(pred.ls, ~.x %>%
+                   select(pred.mn, ZT, Group, Temp) %>% 
+                   mutate(FishCount=round(pred.mn)) %>% 
+                   uncount(FishCount) %>% 
+                   ggplot(aes(ZT, Temp)) +
+                   geom_density2d_filled(colour=NA, bins=20) + 
+                   scale_fill_manual(values=lisa_palette("KatsushikaHokusai", 20, "continuous"),
+                                     guide="none") +
+                   ylim(temp_rng[1], temp_rng[2]) + 
+                   facet_wrap(~Group) + 
+                   labs(y="", title=" "))
+temp.heat[[1]] <- temp.heat[[1]] + 
+  labs(title=paste0(species, ": Fitted"), y="Temperature")
+ggpubr::ggarrange(plotlist=temp.heat, nrow=1)
+ggsave(glue("figs/heatmap_predicted_temp_{species}.png"), 
+       height=3, width=8, dpi=300)
+
 heatmap.df <- expand_grid(ZT=unique(data.df$ZT),
                           Chamber=unique(data.df$Chamber),
                           Group=unique(data.df$Group)) 
-heatmap.pred <- pmax(exp(posterior_epred(out, newdata=heatmap.df, re.form=NA))-1, 0)
+heatmap.pred <- posterior_epred(out, newdata=heatmap.df, re.form=NA)
 heatmap.df <- heatmap.df %>%
-  mutate(pred.mn=apply(heatmap.pred, 2, mean))
+  mutate(pred.mn=apply(pmax(exp(heatmap.pred)-1, 0), 2, mean),
+         pred.lmn=apply(heatmap.pred, 2, mean))
 
-ggplot(heatmap.df, aes(ZT, Chamber, fill=pred.mn)) + 
+ggplot(heatmap.df, aes(ZT, Chamber, fill=exp(pred.lmn)-1)) + 
   geom_raster(interpolate=F) +
   facet_wrap(~Group) +
-  scale_fill_gradientn("Mean observed count", 
+  scale_fill_gradientn("Mean predicted count", 
                        colours=lisa_palette("KatsushikaHokusai", 1e3, "continuous")) +
   guides(fill=guide_colourbar(title.position="top", title.hjust=0.5)) +
   theme(legend.position="bottom",
@@ -153,6 +196,7 @@ ggsave(paste0("figs/heatmap_posterior_mean_", species, "_", mod_type,".png"),
 prefChamber.df_epred <- t(heatmap.pred) %>% as_tibble() %>%
   mutate(id=row_number()) %>%
   pivot_longer(1:4000, names_to="iter", values_to="predFish") %>%
+  mutate(predFish=pmax(exp(predFish)-1, 0)) %>%
   full_join(heatmap.df %>% mutate(id=row_number()), by="id") %>%
   group_by(ZT, Group, iter) %>%
   mutate(Chamber=as.numeric(Chamber)) %>%
@@ -228,7 +272,7 @@ ggsave(paste0("figs/preferred_chamber_tankMeans_", species, "_", mod_type,".png"
 
 heatmap.df %>% 
   group_by(Chamber, ZT, Group) %>%
-  summarise(mn=mean(pred.mn)) %>%
+  summarise(mn=mean(exp(pred.lmn)-1)) %>%
   ggplot(aes(as.numeric(Chamber), mn, colour=ZT, group=ZT)) + 
   geom_line() +
   facet_wrap(~Group) +
@@ -240,7 +284,7 @@ ggsave(paste0("figs/tube_plots_", species, "_", mod_type,".png"),
 
 heatmap.df %>% 
   group_by(Chamber, ZT, Group) %>%
-  summarise(mn=mean(pred.mn)) %>%
+  summarise(mn=mean(exp(pred.lmn)-1)) %>%
   ggplot(aes(as.numeric(Chamber), mn, colour=ZT, group=ZT)) + 
   geom_jitter(data=data.df, aes(y=FishCount), alpha=0.5, shape=1, size=0.5) + 
   geom_line() +
