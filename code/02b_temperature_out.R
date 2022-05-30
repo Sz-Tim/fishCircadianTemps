@@ -64,7 +64,7 @@ pred.df <- expand_grid(ZT=unique(data.df$ZT),
                        Group=unique(data.df$Group)) 
 preds <- posterior_epred(out, newdata=pred.df, re.form=NA)
 pred.df <- pred.df %>%
-  mutate(pred.mn=apply(preds, 2, median),
+  mutate(pred.mn=apply(preds, 2, mean),
          CI95_l=apply(preds, 2, function(x) quantile(x, 0.025)),
          CI90_l=apply(preds, 2, function(x) quantile(x, 0.05)),
          CI80_l=apply(preds, 2, function(x) quantile(x, 0.1)),
@@ -72,14 +72,7 @@ pred.df <- pred.df %>%
          CI90_h=apply(preds, 2, function(x) quantile(x, 0.95)),
          CI95_h=apply(preds, 2, function(x) quantile(x, 0.975)))
 
-pred.df %>%
-  ggplot(aes(ZT)) + 
-  geom_point(aes(y=pred.mn), size=2) + 
-  geom_linerange(aes(ymin=CI80_l, ymax=CI80_h), size=1.5) +
-  geom_linerange(aes(ymin=CI90_l, ymax=CI90_h), size=1) +
-  geom_linerange(aes(ymin=CI95_l, ymax=CI95_h), size=0.5) +
-  facet_wrap(~Group) +
-  labs(x="ZT", y="Preferred temperature\n(mean + 80%, 90%, 95% CIs)")
+write_csv(pred.df, glue("out/predicted_prefTemp_{species}.csv"))
 
 pred.df %>%
   ggplot(aes(ZT, colour=Group)) + 
@@ -97,9 +90,10 @@ pred.df %>%
   ggtitle(species) + 
   ylim(temp_rng[1], temp_rng[2]) +
   theme(legend.position=c(0.8, 0.15),
-        legend.title=element_blank())
+        legend.title=element_blank(), 
+        legend.background=element_blank())
 ggsave(paste0("figs/preferred_temperature_mnOnly_", species, "_", mod_type, ".png"), 
-       width=5, height=5, dpi=300)
+       height=5, width=7, dpi=300)
 
 pred.df %>%
   ggplot(aes(ZT, colour=Group, fill=Group)) + 
@@ -114,9 +108,10 @@ pred.df %>%
   ggtitle(species) + 
   ylim(temp_rng[1], temp_rng[2]) +
   theme(legend.position=c(0.8, 0.15),
-        legend.title=element_blank())
+        legend.title=element_blank(), 
+        legend.background=element_blank())
 ggsave(paste0("figs/preferred_temperature_", species, "_", mod_type, ".png"), 
-       width=5, height=5, dpi=300)
+       height=5, width=7, dpi=300)
 
 pred.df %>%
   ggplot(aes(ZT, colour=Group, fill=Group)) + 
@@ -133,6 +128,8 @@ pred.df %>%
   ggtitle(species) + 
   ylim(temp_rng[1], temp_rng[2]) +
   theme(legend.position=c(0.8, 0.15),
-        legend.title=element_blank())
+        legend.title=element_blank(), 
+        legend.background=element_blank())
 ggsave(paste0("figs/preferred_temperature_tankMeans_", species, "_", mod_type, ".png"), 
-       width=5, height=5, dpi=300)
+       height=5, width=7, dpi=300)
+
