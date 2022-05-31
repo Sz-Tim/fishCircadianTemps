@@ -49,6 +49,27 @@ wtChamber.sum <- wtChamber.df %>%
   summarise(mn=mean(wtChamber, na.rm=T),
             se=sd(wtChamber, na.rm=T)/sqrt(sum(!is.na(wtChamber))))
 
+temp.df <- readxl::read_xlsx(dir("data", glue("{species}_.*RawData2"), full.names=T),
+                             1, col_types=c(rep("numeric", 6), "skip", "skip")) %>%
+  mutate(ln_FishCount=log(FishCount+1),
+         Chamber=factor(Chamber),
+         Group=factor(Group, 
+                      levels=c(3, 1, 2), 
+                      labels=c("Control", "Acclimation", "Experiment")),
+         Tank=factor(Tank)) %>%
+  left_join(read_csv(glue("data/temp_{species}.csv")) %>%
+              pivot_longer(starts_with("chamber_"), names_to="Chamber", values_to="Temp") %>%
+              mutate(Chamber=factor(str_sub(Chamber, -1, -1)),
+                     Group=factor(Group, levels=c("Control", "Acclimation", "Experiment")))) %>%
+  group_by(ZT, Group, Tank, Days) %>%
+  summarise(prefTemp=sum(FishCount*Temp)/(sum(FishCount))) %>%
+  ungroup
+
+temp.sum <- temp.df %>%
+  group_by(ZT, Group, Tank) %>%
+  summarise(mn=mean(prefTemp, na.rm=T),
+            se=sd(prefTemp, na.rm=T)/sqrt(sum(!is.na(prefTemp))))
+
 data.noNA <- data.df %>% filter(complete.cases(.))
 
 out <- readRDS(glue("models/out_count_{mod_type}_{species}.rds"))
@@ -106,7 +127,45 @@ prefTemp.sum_epred %>%
   theme(legend.position=c(0.8, 0.15),
         legend.title=element_blank(), 
         legend.background=element_blank())
-ggsave(paste0("figs/preferred_temp_from_nFish_", species, "_", mod_type,".png"), 
+ggsave(paste0("figs/preferred_temp_meanOnly_", species, "_", mod_type,".png"), 
+       height=5, width=7, dpi=300)
+
+prefTemp.sum_epred %>%
+  ggplot(aes(ZT, colour=Group, fill=Group)) + 
+  geom_jitter(data=temp.df, aes(y=prefTemp, shape=Group),
+              alpha=0.8, size=0.95) +
+  geom_line(aes(y=pred.mn)) + 
+  geom_ribbon(aes(ymin=CI95_l, ymax=CI95_h), colour=NA, alpha=0.5) +
+  labs(x="ZT", y="Preferred temperature\n(mean + 95% CIs)") +
+  scale_fill_manual(values=group_col) +
+  scale_colour_manual(values=group_col) + 
+  scale_shape_manual(values=1:3) +
+  ggtitle(species) + 
+  ylim(temp_rng[1], temp_rng[2]) +
+  theme(legend.position=c(0.8, 0.15),
+        legend.title=element_blank(), 
+        legend.background=element_blank())
+ggsave(paste0("figs/preferred_temperature_", species, "_", mod_type, ".png"), 
+       height=5, width=7, dpi=300)
+
+prefTemp.sum_epred %>%
+  ggplot(aes(ZT, colour=Group, fill=Group)) + 
+  geom_point(data=temp.sum, aes(y=mn, shape=Group), alpha=0.8, size=0.95, 
+             position=position_dodge(width=0.45)) +
+  geom_errorbar(data=temp.sum, aes(ymin=mn-2*se, ymax=mn+2*se), size=0.25,
+                width=0.3, position=position_dodge(width=0.45)) +
+  geom_line(aes(y=pred.mn)) + 
+  geom_ribbon(aes(ymin=CI95_l, ymax=CI95_h), colour=NA, alpha=0.5) +
+  labs(x="ZT", y="Preferred temperature\n(mean + 95% CIs)") +
+  scale_fill_manual(values=group_col) +
+  scale_colour_manual(values=group_col) + 
+  scale_shape_manual(values=1:3) +
+  ggtitle(species) + 
+  ylim(temp_rng[1], temp_rng[2]) +
+  theme(legend.position=c(0.8, 0.15),
+        legend.title=element_blank(), 
+        legend.background=element_blank())
+ggsave(paste0("figs/preferred_temperature_tankMeans_", species, "_", mod_type, ".png"), 
        height=5, width=7, dpi=300)
 
 
