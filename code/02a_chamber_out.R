@@ -8,7 +8,7 @@
 
 # switches ----------------------------------------------------------------
 
-species <- c("ZF", "Tilapia")[2]
+species <- c("ZF", "Tilapia")[1]
 mod_type <- c("RI", "RS")[2]
 
 
@@ -167,6 +167,8 @@ prefTemp.sum_epred %>%
         legend.background=element_blank())
 ggsave(paste0("figs/preferred_temperature_tankMeans_", species, "_", mod_type, ".png"), 
        height=5, width=7, dpi=300)
+
+write_csv(prefTemp.sum_epred, glue("out/predicted_prefTemp_{species}.csv"))
 
 
 # heatmap
