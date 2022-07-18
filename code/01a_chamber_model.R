@@ -10,8 +10,8 @@
 
 species <- c("ZF", "Tilapia")[1]
 mod_type <- c("RI", "RS")[2]
-iter <- 2000
-warmup <- 1000
+iter <- 3000
+warmup <- 2000
 chains <- 4
 stan_args <- list(adapt_delta=0.99, max_treedepth=20)
 
@@ -56,17 +56,36 @@ mod.rand <- ifelse(mod_type=="RI",
 priors <- c(prior(normal(0, 2), class="b"),
             prior(normal(0, 2), class="Intercept"),
             prior(cauchy(0, 2), class="sd"))
+prior.nl <- c(prior(normal(0, 1), class="b", nlpar="A"),
+              prior(normal(3, 2), class="b", nlpar="M", lb=0),
+              prior(uniform(0, 12), class="b", nlpar="phi", lb=0, ub=12),
+              prior(normal(0, 0.1), class="sd", nlpar="A", lb=0),
+              prior(normal(0, 0.1), class="sd", nlpar="M", lb=0),
+              prior(normal(0, 0.1), class="sd", nlpar="phi", lb=0),
+              prior(normal(0, 0.1), "sigma", lb=0))
 
 
 # fit model ---------------------------------------------------------------
 
-out <- brm(bf(paste("ln_FishCount ~", 
-                    paste0(mod.terms, collapse="*"),
-                    "+", mod.rand), 
-              sigma ~ Group),
-           prior=priors, 
-           control=stan_args,
-           iter=iter, warmup=warmup, init=0,
-           data=data.noNA, cores=chains, refresh=50,
-           save_model=glue("models/mod_count_{mod_type}_{species}.stan"),
-           file=glue("models/out_count_{mod_type}_{species}"))
+out.nl <- brm(bf(ln_FishCount ~ M + A * cos(3.141593*(ZT + phi)/12),
+                 M ~ 1 + Group*Chamber + (1+Group*Chamber|Tank), 
+                 A ~ 1 + Group*Chamber + (1+Group*Chamber|Tank), 
+                 phi ~ 1 + Group*Chamber + (1+Group*Chamber|Tank),
+                 nl=TRUE),
+              prior=prior.nl, 
+              control=stan_args,
+              iter=iter, warmup=warmup, init=0,
+              data=data.noNA, cores=4, refresh=50,
+              save_model=glue("models/nl/mod_count_{species}_2.stan"),
+              file=glue("models/nl/out_count_{species}_2"))
+
+# out <- brm(bf(paste("ln_FishCount ~", 
+#                     paste0(mod.terms, collapse="*"),
+#                     "+", mod.rand), 
+#               sigma ~ Group),
+#            prior=priors, 
+#            control=stan_args,
+#            iter=iter, warmup=warmup, init=0,
+#            data=data.noNA, cores=chains, refresh=50,
+#            save_model=glue("models/mod_count_{mod_type}_{species}.stan"),
+#            file=glue("models/out_count_{mod_type}_{species}"))
