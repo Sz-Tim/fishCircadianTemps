@@ -62,7 +62,7 @@ prior.nl <- c(prior(normal(0, 1), class="b", nlpar="A", lb=0),
               prior(normal(0, 0.1), class="sd", nlpar="A", lb=0),
               prior(normal(0, 0.1), class="sd", nlpar="M", lb=0),
               prior(normal(0, 0.1), class="sd", nlpar="phi", lb=0),
-              prior(normal(0, 0.1), dpar="sigma", lb=0))
+              prior(normal(0, 0.1), "sigma", lb=0))
 
 
 # fit model ---------------------------------------------------------------
