@@ -10,8 +10,8 @@
 
 species <- c("ZF", "Tilapia")[1]
 mod_type <- c("RI", "RS")[2]
-iter <- 2000
-warmup <- 1000
+iter <- 3000
+warmup <- 2000
 chains <- 4
 stan_args <- list(adapt_delta=0.99, max_treedepth=20)
 
@@ -37,7 +37,8 @@ data.df <- readxl::read_xlsx(dir("data", glue("{species}_.*RawData2"), full.name
                      Group=factor(Group, levels=c("Control", "Acclimation", "Experiment")))) %>%
   group_by(ZT, Group, Tank, Days) %>%
   summarise(prefTemp=sum(FishCount*Temp)/(sum(FishCount))) %>%
-  ungroup
+  ungroup %>%
+  mutate(ZT_ang=2*pi*ZT/24)
 
 
 
@@ -56,10 +57,24 @@ if(species=="ZF") {
   priors <- c(prior(normal(0,2), "b"),
               prior(normal(27.5, 2), "Intercept"),
               prior(cauchy(0,1), "sd"))
+  prior.nl <- c(prior(normal(0, 1), class="b", nlpar="A"),
+                prior(normal(27.5, 2), class="b", nlpar="M"),
+                prior(uniform(0, 12), class="b", nlpar="phi", lb=0, ub=12),
+                prior(normal(0, 0.1), class="sd", nlpar="A", lb=0),
+                prior(normal(0, 0.1), class="sd", nlpar="M", lb=0),
+                prior(normal(0, 0.1), class="sd", nlpar="phi", lb=0),
+                prior(normal(0, 0.1), "sigma", lb=0))
 } else {
   priors <- c(prior(normal(0,2), "b"),
               prior(normal(30, 2), "Intercept"),
               prior(cauchy(0,1), "sd"))
+  prior.nl <- c(prior(normal(0, 1), class="b", nlpar="A"),
+                prior(normal(30, 2), class="b", nlpar="M"),
+                prior(uniform(12), class="b", nlpar="phi", lb=0, ub=12),
+                prior(normal(0, 0.1), class="sd", nlpar="A", lb=0),
+                prior(normal(0, 0.1), class="sd", nlpar="M", lb=0),
+                prior(normal(0, 0.1), class="sd", nlpar="phi", lb=0),
+                prior(normal(0, 0.1), "sigma", lb=0))
 }
 
 
@@ -67,13 +82,25 @@ if(species=="ZF") {
 
 # fit model ---------------------------------------------------------------
 
-out <- brm(bf(paste("prefTemp ~", 
-                    paste0(mod.terms, collapse="*"),
-                    "+", mod.rand), 
-              sigma ~ Group),
-           prior=priors, 
-           control=list(adapt_delta=0.99, max_treedepth=20),
-           iter=3000, warmup=2000, init=0,
-           data=data.noNA, cores=4, refresh=50,
-           save_model=glue("models/mod_temperature_{mod_type}_{species}.stan"),
-           file=glue("models/out_temperature_{mod_type}_{species}"))
+out.nl <- brm(bf(prefTemp ~ M + A * cos(3.141593*(ZT + phi)/12),
+                 M ~ 1 + Group + (1+Group|Tank), 
+                 A ~ 1 + Group + (1+Group|Tank), 
+                 phi ~ 1 + Group + (1+Group|Tank),
+                 nl=TRUE),
+              prior=prior.nl, 
+              control=stan_args,
+              iter=iter, warmup=warmup, init=0,
+              data=data.noNA, cores=4, refresh=50,
+              save_model=glue("models/nl/mod_temperature_{species}_2.stan"),
+              file=glue("models/nl/out_temperature_{species}_2"))
+
+# out <- brm(bf(paste("prefTemp ~", 
+#                     paste0(mod.terms, collapse="*"),
+#                     "+", mod.rand), 
+#               sigma ~ Group),
+#            prior=priors, 
+#            control=stan_args,
+#            iter=iter, warmup=warmup, init=0,
+#            data=data.noNA, cores=4, refresh=50,
+#            save_model=glue("models/RF_cor/mod_temperature_{mod_type}_{species}.stan"),
+#            file=glue("models/RF_cor/out_temperature_{mod_type}_{species}"))
