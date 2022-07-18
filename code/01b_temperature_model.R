@@ -60,10 +60,10 @@ if(species=="ZF") {
   prior.nl <- c(prior(normal(0, 1), class="b", nlpar="A", lb=0),
                 prior(normal(27.5, 2), class="b", nlpar="M"),
                 prior(uniform(0, 24), class="b", nlpar="phi", lb=0, ub=24),
-                prior(normal(0, 0.1), class="sd", nlpar="A", lb=0),
-                prior(normal(0, 0.1), class="sd", nlpar="M", lb=0),
-                prior(normal(0, 0.1), class="sd", nlpar="phi", lb=0),
-                prior(normal(0, 0.1), dpar="sigma", lb=0))
+                prior(normal(0, 0.5), class="sd", nlpar="A", lb=0),
+                prior(normal(0, 0.5), class="sd", nlpar="M", lb=0),
+                prior(normal(0, 0.5), class="sd", nlpar="phi", lb=0),
+                prior(normal(0, 0.5), dpar="sigma", lb=0))
 } else {
   priors <- c(prior(normal(0,2), "b"),
               prior(normal(30, 2), "Intercept"),
@@ -71,10 +71,10 @@ if(species=="ZF") {
   prior.nl <- c(prior(normal(0, 1), class="b", nlpar="A", lb=0),
                 prior(normal(30, 2), class="b", nlpar="M"),
                 prior(uniform(0, 24), class="b", nlpar="phi", lb=0, ub=24),
-                prior(normal(0, 0.1), class="sd", nlpar="A", lb=0),
-                prior(normal(0, 0.1), class="sd", nlpar="M", lb=0),
-                prior(normal(0, 0.1), class="sd", nlpar="phi", lb=0),
-                prior(normal(0, 0.1), dpar="sigma", lb=0))
+                prior(normal(0, 0.5), class="sd", nlpar="A", lb=0),
+                prior(normal(0, 0.5), class="sd", nlpar="M", lb=0),
+                prior(normal(0, 0.5), class="sd", nlpar="phi", lb=0),
+                prior(normal(0, 0.5), dpar="sigma", lb=0))
 }
 
 
