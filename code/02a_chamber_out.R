@@ -21,6 +21,7 @@ library(glue)
 library(lisa)
 theme_set(theme_classic())
 group_col <- c(Control="#B68E52", Acclimation="#697A55", Experiment="#8399B3")
+group_col <- lisa_palette("GretchenAlbrecht", 3, "discrete")
 cmr.ls <- readRDS("figs/cmr_cmaps.RDS")
 temp_rng <- list(ZF=c(24, 31.5), Tilapia=c(25.5, 34.5))[[species]]
 
@@ -72,7 +73,7 @@ temp.sum <- temp.df %>%
 
 data.noNA <- data.df %>% filter(complete.cases(.))
 
-out <- readRDS(glue("models/out_count_{mod_type}_{species}.rds"))
+out <- readRDS(glue("models/noCorr_randEff/out_count_{mod_type}_{species}.rds"))
 
 
 
@@ -80,8 +81,13 @@ out <- readRDS(glue("models/out_count_{mod_type}_{species}.rds"))
 
 # pp_check(out)
 # summary(out)
-# conditional_effects(out, conditions=tibble(Chamber=unique(data.df$Chamber)))
-# conditional_effects(out, conditions=tibble(Group=unique(data.df$Group)))
+conditional_effects(out, conditions=tibble(Chamber=unique(data.df$Chamber)))
+conditional_effects(out, conditions=tibble(Group=unique(data.df$Group)))
+
+conditional_effects(out, conditions=tibble(ZT=c(0, 6, 12, 18)))
+
+conditional_effects(out, conditions=expand_grid(ZT=c(0, 6, 12, 18),
+                                                Group=levels(data.df$Group)))
 
 
 
@@ -354,4 +360,15 @@ heatmap.df %>%
   ylim(0, NA) +
   labs(title=species, x="Chamber", y="Number of fish (fitted mean)")
 ggsave(paste0("figs/tube_plots_", species, "_", mod_type,"_pts.png"), 
+       width=8, height=4, dpi=300)
+
+
+data.df %>% 
+  ggplot(aes(as.numeric(Chamber), FishCount, colour=ZT, group=ZT)) + 
+  geom_jitter(alpha=0.5, shape=1, size=0.5) + 
+  facet_wrap(~Group) +
+  scale_colour_gradientn(colours=cmr.ls$seasons) +
+  ylim(0, NA) +
+  labs(title=species, x="Chamber", y="Number of fish (observed)")
+ggsave(paste0("figs/tube_plots_", species, "_", mod_type,"_obsOnly.png"), 
        width=8, height=4, dpi=300)
