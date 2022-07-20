@@ -9,9 +9,8 @@
 # switches ----------------------------------------------------------------
 
 species <- c("ZF", "Tilapia")[1]
-mod_type <- c("RI", "RS")[2]
-iter <- 3000
-warmup <- 2000
+iter <- 4000
+warmup <- 3000
 chains <- 4
 stan_args <- list(adapt_delta=0.99, max_treedepth=20)
 
@@ -45,17 +44,6 @@ data.df <- readxl::read_xlsx(dir("data", glue("{species}_.*RawData2"), full.name
 
 data.noNA <- data.df %>% filter(complete.cases(.))
 
-mod.terms <- c("I(cos(6.283185*ZT/24))", 
-               "I(sin(6.283185*ZT/24))",
-               "Chamber", 
-               "Group")
-mod.rand <- ifelse(mod_type=="RI", 
-                   "(1|Tank)",
-                   paste0("(1+", paste0(mod.terms, collapse="*"), "|Tank)"))
-
-priors <- c(prior(normal(0, 2), class="b"),
-            prior(normal(0, 2), class="Intercept"),
-            prior(cauchy(0, 2), class="sd"))
 prior.nl <- c(prior(normal(0, 1), class="b", nlpar="A", lb=0),
               prior(normal(1, 1), class="b", nlpar="M", lb=0),
               prior(uniform(0, 24), class="b", nlpar="phi", lb=0, ub=24),
@@ -80,13 +68,3 @@ out.nl <- brm(bf(ln_FishCount ~ M + A * cos(3.141593*(ZT + phi)/12),
               save_model=glue("models/nl/mod_count_{species}.stan"),
               file=glue("models/nl/out_count_{species}"))
 
-# out <- brm(bf(paste("ln_FishCount ~", 
-#                     paste0(mod.terms, collapse="*"),
-#                     "+", mod.rand), 
-#               sigma ~ Group),
-#            prior=priors, 
-#            control=stan_args,
-#            iter=iter, warmup=warmup, init=0,
-#            data=data.noNA, cores=chains, refresh=50,
-#            save_model=glue("models/mod_count_{mod_type}_{species}.stan"),
-#            file=glue("models/out_count_{mod_type}_{species}"))
