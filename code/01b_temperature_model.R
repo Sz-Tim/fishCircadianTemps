@@ -83,7 +83,7 @@ if(species=="ZF") {
 # fit model ---------------------------------------------------------------
 
 out.nl <- brm(bf(prefTemp ~ M + A * cos(3.141593*(ZT + phi)/12),
-                 M ~ 1 + Group + (1+Group|Tank), 
+                 M ~ 0 + Group + (0+Group|Tank), 
                  A ~ 0 + Group + (0+Group|Tank), 
                  phi ~ 0 + Group + (0+Group|Tank),
                  sigma ~ Group,
@@ -92,8 +92,8 @@ out.nl <- brm(bf(prefTemp ~ M + A * cos(3.141593*(ZT + phi)/12),
               control=stan_args,
               iter=iter, warmup=warmup, init=0,
               data=data.noNA, cores=chains, chains=chains, refresh=50,
-              save_model=glue("models/nl/mod_temperature_{species}.stan"),
-              file=glue("models/nl/out_temperature_{species}"))
+              save_model=glue("models/nl/mod_temperature_wide_{species}.stan"),
+              file=glue("models/nl/out_temperature_wide_{species}"))
 
 # out <- brm(bf(paste("prefTemp ~", 
 #                     paste0(mod.terms, collapse="*"),
