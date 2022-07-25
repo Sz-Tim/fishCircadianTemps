@@ -46,7 +46,7 @@ data.noNA <- data.df %>% filter(complete.cases(.))
 
 prior.nl <- c(prior(normal(0, 1), class="b", nlpar="A", lb=0),
               prior(normal(1, 1), class="b", nlpar="M", lb=0),
-              prior(von_mises(0, 0), class="b", nlpar="phi"),
+              prior(von_mises(0, 0.001), class="b", nlpar="phi", lb=-3.141593, ub=3.141593),
               prior(normal(0, 0.1), class="sd", nlpar="A", lb=0),
               prior(normal(0, 0.1), class="sd", nlpar="M", lb=0),
               prior(normal(0, 0.1), class="sd", nlpar="phi", lb=0),

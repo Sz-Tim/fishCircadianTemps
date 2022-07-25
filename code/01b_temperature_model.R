@@ -9,8 +9,8 @@
 # switches ----------------------------------------------------------------
 
 species <- c("ZF", "Tilapia")[1]
-iter <- 2000
-warmup <- 1000
+iter <- 4000
+warmup <- 3000
 chains <- 4
 stan_args <- list(adapt_delta=0.99, max_treedepth=20)
 
@@ -45,13 +45,23 @@ data.df <- readxl::read_xlsx(dir("data", glue("{species}_.*RawData2"), full.name
 
 data.noNA <- data.df %>% filter(complete.cases(.))
 
-prior.nl <- c(prior(normal(0, 1), class="b", nlpar="A", lb=0),
-              prior(normal(ifelse(species=="ZF", 27.5, 30), 2), class="b", nlpar="M"),
-              prior(von_mises(0, 0), class="b", nlpar="phi"),
-              prior(normal(0, 0.1), class="sd", nlpar="A", lb=0),
-              prior(normal(0, 0.1), class="sd", nlpar="M", lb=0),
-              prior(normal(0, 0.1), class="sd", nlpar="phi", lb=0),
-              prior(normal(0, 0.1), dpar="sigma", lb=0))
+if(species=="ZF") {
+  prior.nl <- c(prior(normal(0, 1), class="b", nlpar="A", lb=0),
+                prior(normal(27.5, 2), class="b", nlpar="M"),
+                prior(von_mises(0, 0.001), class="b", nlpar="phi", lb=-3.141593, ub=3.141593),
+                prior(normal(0, 0.1), class="sd", nlpar="A", lb=0),
+                prior(normal(0, 0.1), class="sd", nlpar="M", lb=0),
+                prior(normal(0, 0.1), class="sd", nlpar="phi", lb=0),
+                prior(normal(0, 0.1), dpar="sigma", lb=0))
+} else if(species=="Tilapia") {
+  prior.nl <- c(prior(normal(0, 1), class="b", nlpar="A", lb=0),
+                prior(normal(30, 2), class="b", nlpar="M"),
+                prior(von_mises(0, 0.001), class="b", nlpar="phi", lb=-3.141593, ub=3.141593),
+                prior(normal(0, 0.1), class="sd", nlpar="A", lb=0),
+                prior(normal(0, 0.1), class="sd", nlpar="M", lb=0),
+                prior(normal(0, 0.1), class="sd", nlpar="phi", lb=0),
+                prior(normal(0, 0.1), dpar="sigma", lb=0))
+}
 
 
 # fit model ---------------------------------------------------------------
