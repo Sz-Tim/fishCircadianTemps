@@ -8,9 +8,12 @@
 
 library(tidyverse)
 library(brms)
+library(tidybayes)
+library(lisa)
 library(glue)
 theme_set(theme_classic())
-group_col <- c(`Control CTE`="#767676", Acclimation="#800000", Experiment="#155F83")
+group_col <- c(`Control CTE`="#1b9e77", Acclimation="#7570b3", Experiment="#d95f02")
+group_raw <- c("Control", "Acclimation", "Experiment")
 cmr.ls <- readRDS("figs/cmr_cmaps.RDS")
 
 species <- c("Nile tilapia"="Tilapia", "Zebrafish"="ZF")
@@ -21,18 +24,13 @@ data.df <- map(species,
                                   1, col_types=c(rep("numeric", 6), "skip", "skip")) %>%
                  mutate(ln_FishCount=log(FishCount+1),
                         Chamber=factor(Chamber),
-                        Group=factor(Group, 
-                                     levels=c(3, 1, 2), 
-                                     labels=c("Control", "Acclimation", "Experiment")),
+                        Group=factor(Group, levels=c(3, 1, 2), labels=group_raw),
                         Tank=factor(Tank)) %>%
                  left_join(read_csv(glue("data/temp_{.x}.csv")) %>%
                              pivot_longer(starts_with("chamber_"), 
                                           names_to="Chamber", values_to="Temp") %>%
                              mutate(Chamber=factor(str_sub(Chamber, -1, -1)),
-                                    Group=factor(Group, 
-                                                 levels=c("Control", 
-                                                          "Acclimation", 
-                                                          "Experiment")))) %>%
+                                    Group=factor(Group, levels=group_raw))) %>%
   group_by(ZT, Group, Tank, Days) %>%
   summarise(prefTemp=sum(FishCount*Temp)/(sum(FishCount))) %>%
   ungroup)
@@ -50,20 +48,21 @@ data.c <- map(species,
          cos_ZT=cos(2*pi*ZT/24),
          sin_ZT=sin(2*pi*ZT/24),
          Chamber=factor(Chamber),
-         Group=factor(Group, 
-                      levels=c(3, 1, 2), 
-                      labels=c("Control", "Acclimation", "Experiment")),
+         Group=factor(Group, levels=c(3, 1, 2), labels=group_raw),
          Tank=factor(Tank)) %>%
   left_join(read_csv(glue("data/temp_{.x}.csv")) %>%
               pivot_longer(starts_with("chamber_"), names_to="Chamber", values_to="Temp") %>%
               mutate(Chamber=factor(str_sub(Chamber, -1, -1)),
-                     Group=factor(Group, levels=c("Control", "Acclimation", "Experiment")))) %>%
+                     Group=factor(Group, 
+                                  levels=group_raw))) %>%
   mutate(GrpDay=factor(paste(as.numeric(Group), str_pad(Days, 2, "l", "0"), sep="_"))))
 
 out <- map(species, 
-           ~readRDS(glue("models/noCorr_randEff/out_temperature_RS_{.x}.rds")))
+           ~readRDS(glue("models/cosinor/out_temperature_vm_{.x}.rds")))
 out.c <- map(species, 
-           ~readRDS(glue("models/noCorr_randEff/out_count_RS_{.x}.rds")))
+           ~readRDS(glue("models/cosinor/out_count_vm_{.x}.rds")))
+# out.c <- map(species, 
+#              ~readRDS(glue("models/noCorr_randEff/out_count_RS_{.x}.rds")))
 
 pred.df <- map(data.df, 
                ~expand_grid(ZT=unique(.x$ZT),
@@ -73,12 +72,12 @@ preds <- map2(out, pred.df,
 pred.df <- map2(pred.df, preds, 
                 ~.x %>%
                   mutate(pred.mn=apply(.y, 2, mean),
-                         CI95_l=apply(.y, 2, function(x) quantile(x, 0.025)),
-                         CI90_l=apply(.y, 2, function(x) quantile(x, 0.05)),
-                         CI80_l=apply(.y, 2, function(x) quantile(x, 0.1)),
-                         CI80_h=apply(.y, 2, function(x) quantile(x, 0.9)),
-                         CI90_h=apply(.y, 2, function(x) quantile(x, 0.95)),
-                         CI95_h=apply(.y, 2, function(x) quantile(x, 0.975))))
+                         CI80_l=apply(.y, 2, function(x) hdci(x, 0.8)[,1]),
+                         CI80_h=apply(.y, 2, function(x) hdci(x, 0.8)[,2]),
+                         CI90_l=apply(.y, 2, function(x) hdci(x, 0.9)[,1]),
+                         CI90_h=apply(.y, 2, function(x) hdci(x, 0.9)[,2]),
+                         CI95_l=apply(.y, 2, function(x) hdci(x, 0.95)[,1]),
+                         CI95_h=apply(.y, 2, function(x) hdci(x, 0.95)[,2])))
 
 
 
@@ -86,12 +85,10 @@ pred.df <- map2(pred.df, preds,
 
 fig1.ls <- map(2:1, 
                ~pred.df[[.x]] %>%
-                 mutate(Group=factor(Group, 
-                                     labels=c("Control CTE", "Acclimation", "Experiment"))) %>%
+                 mutate(Group=factor(Group, labels=names(group_col))) %>%
   ggplot(aes(ZT, colour=Group, fill=Group)) + 
   geom_jitter(data=data.df[[.x]] %>%
-                mutate(Group=factor(Group, 
-                                    labels=c("Control CTE", "Acclimation", "Experiment"))), 
+                mutate(Group=factor(Group, labels=names(group_col))), 
               aes(y=prefTemp, shape=Group),
               alpha=0.8, size=0.95, width=0.4, height=0) +
   geom_line(aes(y=pred.mn)) + 
@@ -105,11 +102,12 @@ fig1.ls <- map(2:1,
   scale_fill_manual(values=group_col) +
   scale_colour_manual(values=group_col) + 
   scale_shape_manual(values=1:3) +
-  scale_x_continuous("ZT", breaks=seq(0, 24, by=6)) +
+  scale_x_continuous("ZT (h)", breaks=seq(0, 24, by=6)) +
   scale_y_continuous("Preferred temperature (ºC)", limits=temp_rng[[.x]],
                      breaks=seq(ceiling(temp_rng[[.x]][1]),
                                 floor(temp_rng[[.x]][2]),
                                 by=2)) +
+    ggtitle(names(pred.df)[.x]) +
   theme(legend.position=c(0.8, 0.15),
         legend.title=element_blank(), 
         legend.background=element_blank()))
@@ -123,80 +121,85 @@ ggsave("figs/pub/pref_temp_by_ZT.png", width=4, height=7, units="in")
 
 # effects -----------------------------------------------------------------
 
-sum.t <- readRDS("models/noCorr_randEff/out_temperature_RS_Tilapia.rds") %>%
-  as_draws_df(variable="b_.*:Group|b_Group", regex=T) %>% 
-  rename_with(~str_replace(.x, "Icos6.283185MUZTD24", "cosZT")) %>% 
-  rename_with(~str_replace(.x, "Isin6.283185MUZTD24", "sinZT")) %>% 
-  rename_with(~str_remove(.x, "b_")) %>% 
-  rename_with(~str_remove(.x, "Group")) %>%
-  select(-starts_with(".")) %>%
-  pivot_longer(everything(), names_to="param", values_to="draws") %>%
-  group_by(param) %>%
+paramSum.ls <- map_dfr(
+  out,
+  ~.x %>%
+    as_draws_df(variable="^b_(M|A|phi)", regex=T) %>%
+    rename_with(~str_remove(.x, "^b_")) %>%
+    rename_with(~str_remove(.x, "Group")) %>%
+    rename_with(~str_replace(.x, "Intercept", "Control")) %>%
+    select(-starts_with(".")) %>%
+    pivot_longer(everything(), names_to="param_OG", values_to="draws") %>%
+    filter(param_OG != "phi_Control"),
+  .id="Species") %>%
+  mutate(Param=str_split_fixed(param_OG, "_", 2)[,1],
+         Group=str_split_fixed(param_OG, "_", 2)[,2]) %>%
+  mutate(draws=case_when(param_OG=="phi_Acclimation" & Species=="Nile tilapia" ~ (draws)*12/pi + 24,
+                         param_OG=="phi_Experiment" & Species=="Nile tilapia" ~ (draws)*12/pi,
+                         Param=="phi" & Species=="Zebrafish" ~ draws*12/pi + 12,
+                         Param!="phi" ~ draws)) %>%
+  group_by(Species, Param, Group, param_OG) %>%
   summarise(mn=mean(draws),
             md=median(draws),
-            CI80_l=quantile(draws, 0.1),
-            CI80_h=quantile(draws, 0.9),
-            CI90_l=quantile(draws, 0.05),
-            CI90_h=quantile(draws, 0.95),
-            CI95_l=quantile(draws, 0.025),
-            CI95_h=quantile(draws, 0.975)) %>%
-  ungroup %>% 
-  mutate(species="Nile tilapia")
+            CI80_l=hdci(draws, 0.8)[,1],
+            CI80_h=hdci(draws, 0.8)[,2],
+            CI90_l=hdci(draws, 0.9)[,1],
+            CI90_h=hdci(draws, 0.9)[,2],
+            CI95_l=hdci(draws, 0.95)[,1],
+            CI95_h=hdci(draws, 0.95)[,2]) %>%
+  ungroup %>%
+  mutate(Group=factor(Group, levels=group_raw, labels=names(group_col)),
+         Param=factor(Param, levels=c("M", "A", "phi"),
+                      labels=c("MESOR", "Amplitude", "Acrophase"))) %>%
+  group_by(Param) %>%
+  group_split()
 
-sum.z <- readRDS("models/noCorr_randEff/out_temperature_RS_ZF.rds") %>%
-  as_draws_df(variable="b_.*:Group|b_Group", regex=T) %>% 
-  rename_with(~str_replace(.x, "Icos6.283185MUZTD24", "cosZT")) %>% 
-  rename_with(~str_replace(.x, "Isin6.283185MUZTD24", "sinZT")) %>% 
-  rename_with(~str_remove(.x, "b_")) %>% 
-  rename_with(~str_remove(.x, "Group")) %>%
-  select(-starts_with(".")) %>%
-  pivot_longer(everything(), names_to="param", values_to="draws") %>%
-  group_by(param) %>%
-  summarise(mn=mean(draws),
-            md=median(draws),
-            CI80_l=quantile(draws, 0.1),
-            CI80_h=quantile(draws, 0.9),
-            CI90_l=quantile(draws, 0.05),
-            CI90_h=quantile(draws, 0.95),
-            CI95_l=quantile(draws, 0.025),
-            CI95_h=quantile(draws, 0.975)) %>%
-  ungroup %>% 
-  mutate(species="Zebrafish")
-
-sum.df <- bind_rows(sum.t, sum.z) %>%
-  mutate(param=factor(param, 
-                      levels=c("Acclimation", "Experiment", 
-                               "sinZT:Acclimation", "sinZT:Experiment", 
-                               "cosZT:Acclimation", "cosZT:Experiment",
-                               "cosZT:sinZT:Acclimation", "cosZT:sinZT:Experiment")),
-         Group=if_else(grepl("Accl", param), "Acclimation", "Experiment"),
-         timeEff=str_remove(str_remove(param, ":Acclimation"), ":Experiment"),
-         timeEff=str_replace(timeEff, "Experiment|Acclimation", "Intercept")) %>%
-  mutate(Group=factor(Group, levels=c("Experiment", "Acclimation")),
-         timeEff=factor(timeEff, levels=c("cosZT:sinZT", "sinZT", "cosZT", "Intercept"),
-                        labels=c("cos(ZT):sin(ZT)", "sin(ZT)\n[6-18h cycle]",
-                                 "cos(ZT)\n[0-12h cycle]", "Intercept\n[mean temp.]"))) %>%
-  mutate(species=factor(species, levels=c("Zebrafish", "Nile tilapia")))
-ggplot(sum.df, aes(y=timeEff, x=md, group=Group, colour=Group)) +
-  geom_vline(xintercept=0, colour="grey", size=0.5) +
-  geom_point(size=2, position=position_dodge(width=0.4)) +
-  geom_linerange(aes(xmin=CI80_l, xmax=CI80_h), size=1.25, 
-                 position=position_dodge(width=0.4)) +
-  geom_linerange(aes(xmin=CI90_l, xmax=CI90_h), size=0.75, 
-                 position=position_dodge(width=0.4)) +
-  geom_linerange(aes(xmin=CI95_l, xmax=CI95_h), size=0.25, 
-                 position=position_dodge(width=0.4)) +
-  theme_classic() + 
-  scale_colour_manual(values=group_col[2:3]) +
-  facet_wrap(~species) +
-  labs(x="Effect size") +
-  theme(axis.title.y=element_blank(),
-        legend.position=c(0.9, 0.13),
-        legend.title=element_blank(),
-        legend.background=element_blank(),
-        legend.key.height=unit(0.4, "cm"),
-        legend.key.width=unit(0.3, "cm"))
-ggsave("figs/pub/effects.png", width=6, height=3, dpi=300)
+param_i <- tibble(Param=c("MESOR", "Amplitude", "Acrophase"),
+                  labs=c("MESOR (ºC)", "Amplitude", "Acrophase (h)"),
+                  lim=list(range(unlist(temp_rng)), 
+                           c(0, 1), 
+                           c(0, 24)),
+                  breaks=list(seq(min(unlist(temp_rng)), max(unlist(temp_rng)), by=2),
+                              c(0, 0.5, 1),
+                              c(0, 6, 12, 18, 24)))
+temp_rng.df <- tibble(Species=names(species),
+                      mn=map_dbl(temp_rng, mean),
+                      tmin=map_dbl(temp_rng, ~.x[1]),
+                      tmax=map_dbl(temp_rng, ~.x[2]))
+                
+pt_width <- 0.5
+fig5.ls <- map(1:3, 
+    ~ggplot(paramSum.ls[[.x]], 
+            aes(y=Species, x=mn, colour=Group)) +
+      geom_point(size=2, position=position_dodge(width=pt_width)) +
+      geom_errorbarh(aes(xmin=CI80_l, xmax=CI80_h), size=1.25, height=0,
+                     position=position_dodge(width=pt_width)) +
+      geom_errorbarh(aes(xmin=CI90_l, xmax=CI90_h), size=0.75, height=0,
+                     position=position_dodge(width=pt_width)) +
+      geom_errorbarh(aes(xmin=CI95_l, xmax=CI95_h), size=0.25, height=0.2,
+                     position=position_dodge(width=pt_width)) +
+      scale_colour_manual(values=group_col) + 
+      scale_x_continuous(param_i$labs[.x], 
+                         limits=param_i$lim[[.x]],
+                         breaks=param_i$breaks[[.x]]) +
+      {if(.x>1) theme(axis.text.y=element_blank())} +
+      {if(.x==1) theme(axis.title.y=element_blank())} +
+      {if(.x>1) ylab("")} +
+      {if(param_i$Param[.x]=="MESOR") 
+        geom_errorbarh(data=temp_rng.df, aes(xmin=tmin, xmax=tmax),
+                       position=position_nudge(y=pt_width/6),
+                       colour="grey", size=0.25, height=0.25)} +
+      {if(param_i$Param[.x]=="Acrophase") 
+        geom_rect(aes(xmin=0, xmax=12, ymax=2.5, ymin=2.58), 
+                  colour="grey30", fill="white", size=0.25)} +
+      {if(param_i$Param[.x]=="Acrophase") 
+        geom_rect(aes(xmin=12, xmax=24, ymax=2.5, ymin=2.58), 
+                  colour="grey30", fill="grey30", size=0.25)} +
+      theme(legend.title=element_blank()))
+ggpubr::ggarrange(plotlist=fig5.ls, nrow=1, common.legend=T, legend="bottom", 
+                  labels=paste0(letters[1:length(fig5.ls)], "."), 
+                  widths=c(1.1, 1, 1))
+ggsave("figs/pub/effects.png", width=8, height=2, dpi=300)
 
 
 
@@ -213,50 +216,69 @@ pred.ls <- map2(data.c, out.c,
                                        newdata=.x %>% filter(Tank==1),
                                        re_formula=NA))-1, 
                    0))) %>%
-                 mutate(Group=factor(Group, 
-                                     labels=c("Control CTE", "Acclimation", "Experiment")),
+                 mutate(Group=factor(Group, labels=names(group_col)),
                         Temp=Temp + rnorm(n(), 0, 0.2)) %>%
                  group_by(Group) %>%
                  group_split())
 nBins <- 20
-temp.heat.ZF <- map(pred.ls[[2]], 
-                    ~.x %>%
+temp.heat.ZF <- map(1:3, 
+                    ~pred.ls[[2]][[.x]] %>%
                       select(pred.mn, ZT, Group, Temp) %>% 
                       mutate(FishCount=round(pred.mn)) %>% 
                       uncount(FishCount) %>% 
                       ggplot(aes(ZT, Temp)) +
                       geom_density2d_filled(colour=NA, bins=nBins) + 
-                      scale_fill_manual(values=lisa::lisa_palette("KatsushikaHokusai", nBins, "continuous"),
+                      geom_rect(aes(xmin=0, xmax=12, ymin=temp_rng[[2]][2],
+                                    ymax=temp_rng[[2]][2]+diff(temp_rng[[2]])*0.04), 
+                                colour="grey30", fill="white", size=0.25) +
+                      geom_rect(aes(xmin=12, xmax=24, ymin=temp_rng[[2]][2],
+                                    ymax=temp_rng[[2]][2]+diff(temp_rng[[2]])*0.04), 
+                                colour="grey30", fill="grey30", size=0.25) +
+                      scale_fill_manual(values=lisa_palette("KatsushikaHokusai", nBins, "continuous"),
                                         guide="none") +
-                      scale_x_continuous("ZT", breaks=seq(0, 24, by=6)) +
-                      scale_y_continuous(limits=temp_rng[[2]],
+                      scale_x_continuous("ZT (h)", breaks=seq(0, 24, by=6)) +
+                      scale_y_continuous(limits=c(temp_rng[[2]][1], 
+                                                  temp_rng[[2]][2]+diff(temp_rng[[2]])*0.04),
                                          breaks=seq(ceiling(temp_rng[[2]][1]),
                                                     floor(temp_rng[[2]][2]),
                                                     by=2)) +
-                      facet_wrap(~Group) + 
-                      labs(y=""))
-temp.heat.ZF[[1]] <- temp.heat.ZF[[1]] + labs(y="Temperature (ºC)")
-temp.heat.T <- map(pred.ls[[1]], 
-                    ~.x %>%
-                      select(pred.mn, ZT, Group, Temp) %>% 
-                      mutate(FishCount=round(pred.mn)) %>% 
-                      uncount(FishCount) %>% 
-                      ggplot(aes(ZT, Temp)) +
-                      geom_density2d_filled(colour=NA, bins=nBins) + 
-                      scale_fill_manual(values=lisa::lisa_palette("KatsushikaHokusai", nBins, "continuous"),
-                                        guide="none") +
-                     scale_x_continuous("ZT", breaks=seq(0, 24, by=6)) +
-                     scale_y_continuous(limits=temp_rng[[1]],
+                      {if(.x==1) ylab("Temperature (ºC)")} +
+                      {if(.x==1) ggtitle("Zebrafish")} +
+                      {if(.x>1) ylab("")} +
+                      {if(.x>1) ggtitle("")} +
+                      {if(.x>1) theme(axis.text.y=element_blank())} +
+                      facet_wrap(~Group))
+temp.heat.T <- map(1:3, 
+                   ~pred.ls[[1]][[.x]] %>%
+                     select(pred.mn, ZT, Group, Temp) %>% 
+                     mutate(FishCount=round(pred.mn)) %>% 
+                     uncount(FishCount) %>% 
+                     ggplot(aes(ZT, Temp)) +
+                     geom_density2d_filled(colour=NA, bins=nBins) + 
+                     geom_rect(aes(xmin=0, xmax=12, ymin=temp_rng[[1]][2],
+                                   ymax=temp_rng[[1]][2]+diff(temp_rng[[1]])*0.04), 
+                               colour="grey30", fill="white", size=0.25) +
+                     geom_rect(aes(xmin=12, xmax=24, ymin=temp_rng[[1]][2],
+                                   ymax=temp_rng[[1]][2]+diff(temp_rng[[1]])*0.04), 
+                               colour="grey30", fill="grey30", size=0.25) +
+                     scale_fill_manual(values=lisa_palette("KatsushikaHokusai", nBins, "continuous"),
+                                       guide="none") +
+                     scale_x_continuous("ZT (h)", breaks=seq(0, 24, by=6)) +
+                     scale_y_continuous(limits=c(temp_rng[[1]][1], 
+                                                 temp_rng[[1]][2]+diff(temp_rng[[1]])*0.04),
                                         breaks=seq(ceiling(temp_rng[[1]][1]),
                                                    floor(temp_rng[[1]][2]),
                                                    by=2)) +
-                      facet_wrap(~Group) + 
-                      labs(y=""))
-temp.heat.T[[1]] <- temp.heat.T[[1]] + labs(y="Temperature (ºC)")
-
+                     {if(.x==1) ylab("Temperature (ºC)")} +
+                     {if(.x==1) ggtitle("Nile tilapia")} +
+                     {if(.x>1) ylab("")} +
+                     {if(.x>1) ggtitle("")} +
+                     {if(.x>1) theme(axis.text.y=element_blank())} +
+                     facet_wrap(~Group))
 ggpubr::ggarrange(plotlist=c(temp.heat.ZF, temp.heat.T), nrow=2, ncol=3, 
-                  labels=c("a.", "", "", "b.", "", ""))
-ggsave("figs/pub/heatmap_fitted.png", width=7, height=5, units="in")
+                  labels=c("a.", "", "", "b.", "", ""), 
+                  widths=c(1.05, 1, 1))
+ggsave("figs/pub/heatmap_fitted.png", width=7, height=5.25, units="in")
 
 
 
@@ -276,8 +298,7 @@ tube.df <- map2_dfr(tube.base, out.c,
                   mutate(pred.mn=apply(posterior_epred(.y, newdata=.x, re.form=NA), 
                                        2, mean)),
                 .id="Species") %>%
-  mutate(Group=factor(Group, 
-                      labels=c("Control CTE", "Acclimation", "Experiment")),
+  mutate(Group=factor(Group, labels=names(group_col)),
          Species=factor(Species, levels=rev(names(species))))
 fig.tube <- tube.df %>%
       group_by(Species, Chamber, ZT, Group) %>%
@@ -299,68 +320,8 @@ ggsave("figs/pub/tube_plot.png", width=5, height=4, units="in")
 
 
 
-# acrophase ---------------------------------------------------------------
 
-pred.ZTmax <- map2(out.c, tube.base, 
-               ~posterior_epred(.x, newdata=.y, re.form=NA) %>%
-                 t %>% as_tibble() %>%
-                 cbind(.y) %>%
-                 group_by(Chamber, Group) %>%
-                 arrange(ZT) %>%
-                 mutate(across(starts_with("V"), which.max)) %>%
-                 select(-ZT) %>%
-                 pivot_longer(starts_with("V"), names_to="iter", values_to="ZT_max"))
-
-map_dfr(pred.ZTmax, 
-        ~.x %>% 
-          group_by(Chamber, Group, ZT_max) %>%
-          summarise(N=n()) %>%
-          group_by(Chamber, Group) %>%
-          mutate(pr=N/sum(N)),
-        .id="Species") %>%
-  ungroup %>%
-  mutate(Species=factor(Species, levels=rev(names(species))),
-         Group=factor(Group, labels=c("Control CTE", "Acclimation", "Experiment"))) %>%
-  ggplot(aes(ZT_max-1, y=pr, fill=Chamber)) + 
-  geom_bar(stat="identity", colour="grey30", size=0.1) +
-  geom_rect(aes(xmin=-0.5, xmax=11.5, ymax=0.58, ymin=0.55), 
-            colour="grey30", fill="white", size=0.25) +
-  geom_rect(aes(xmin=11.5, xmax=23.5, ymax=0.58, ymin=0.55), 
-            colour="grey30", fill="grey30", size=0.25) +
-  scale_x_continuous(breaks=seq(0,23,by=2), limits=c(-0.5, 23.5)) + 
-  scale_fill_brewer(type="div", palette="RdBu", direction=-1) +
-  facet_grid(Species~Group) +   
-  coord_polar(theta="x", start=(-0.5*pi*2)/24) +
-  theme(panel.grid.major=element_line(size=0.1, colour="grey")) +
-  labs(x="ZT (h)", y="Acrophase probability")
-ggsave("figs/pub/radial_acrophase_distr_fitted.png", width=7, height=4)
-
-map_dfr(data.c,
-        ~.x%>%
-          group_by(Group, Chamber, Tank, Days) %>%
-          arrange(ZT) %>%
-          summarise(ZT_max=which.max(FishCount)) %>%
-          group_by(Group, Chamber, ZT_max) %>%
-          summarise(N=n()) %>%
-          group_by(Group, Chamber) %>%
-          mutate(pr=N/sum(N)),
-        .id="Species") %>%
-  ungroup %>%
-  mutate(Species=factor(Species, levels=rev(names(species))),
-         Group=factor(Group, labels=c("Control CTE", "Acclimation", "Experiment"))) %>%
-  ggplot(aes(ZT_max-1, y=pr, fill=Chamber)) + 
-  geom_bar(stat="identity", colour="grey30", size=0.1) +
-  geom_rect(aes(xmin=-0.5, xmax=11.5, ymax=0.58, ymin=0.55), 
-            colour="grey30", fill="white", size=0.25) +
-  geom_rect(aes(xmin=11.5, xmax=23.5, ymax=0.58, ymin=0.55), 
-            colour="grey30", fill="grey30", size=0.25) +
-  scale_x_continuous(breaks=seq(0,23,by=2), limits=c(-0.5, 23.5)) + 
-  scale_fill_brewer(type="div", palette="RdBu", direction=-1) +
-  facet_grid(Species~Group) +   
-  coord_polar(theta="x", start=(-0.5*pi*2)/24) +
-  theme(panel.grid.major=element_line(size=0.1, colour="grey")) +
-  labs(x="ZT (h)", y="Acrophase probability")
-ggsave("figs/pub/radial_acrophase_distr_obs.png", width=7, height=4)
+# radial plots ------------------------------------------------------------
 
 pred.CHmax <- map2(out.c, tube.base, 
                    ~posterior_epred(.x, newdata=.y, re.form=NA) %>%
@@ -372,132 +333,73 @@ pred.CHmax <- map2(out.c, tube.base,
                      select(-Chamber) %>%
                      pivot_longer(starts_with("V"), names_to="iter", values_to="Chamber_max"))
 
-map_dfr(pred.CHmax, 
-        ~.x %>% 
-          group_by(ZT, Group, Chamber_max) %>%
-          summarise(N=n()) %>%
-          group_by(ZT, Group) %>%
-          mutate(pr=N/sum(N)),
-        .id="Species") %>%
-  ungroup %>%
+chPr.ls <- bind_rows(
+  map_dfr(pred.CHmax, 
+          ~.x %>% 
+            group_by(ZT, Group, Chamber_max) %>%
+            summarise(N=n()) %>%
+            group_by(ZT, Group) %>%
+            mutate(pr=N/sum(N)),
+          .id="Species") %>%
+    ungroup %>%
+    mutate(source="Fitted"),
+  map_dfr(data.c,
+          ~.x%>%
+            group_by(ZT, Group, Tank, Days) %>%
+            arrange(Chamber) %>%
+            summarise(Chamber_max=which.max(FishCount)) %>%
+            group_by(ZT, Group, Chamber_max) %>%
+            summarise(N=n()) %>%
+            group_by(ZT, Group) %>%
+            mutate(pr=N/sum(N)),
+          .id="Species") %>%
+    ungroup %>%
+    mutate(source="Observed")) %>%
   mutate(Species=factor(Species, levels=rev(names(species))),
          Chamber_max=factor(Chamber_max),
-         Group=factor(Group, labels=c("Control CTE", "Acclimation", "Experiment"))) %>%
-  ggplot(aes(ZT, y=pr, fill=Chamber_max)) + 
-  geom_bar(stat="identity", colour="grey30", size=0.1) +
-  geom_rect(aes(xmin=-0.5, xmax=11.5, ymax=1.1, ymin=1.05), 
-            colour="grey30", fill="white", size=0.25) +
-  geom_rect(aes(xmin=11.5, xmax=23.5, ymax=1.1, ymin=1.05), 
-            colour="grey30", fill="grey30", size=0.25) +
-  scale_x_continuous(breaks=seq(0,23,by=2), limits=c(-0.5, 23.5)) +
-  scale_fill_brewer("Chamber", type="div", palette="RdBu", direction=-1) +
-  facet_grid(Species~Group) +   
-  coord_polar(theta="x", start=(-0.5*pi*2)/24) +
-  theme(panel.grid.major=element_line(size=0.1, colour="grey")) +
-  labs(x="ZT (h)", y="Probability of highest fish density")
-ggsave("figs/pub/radial_chamber_distr_fitted.png", width=7, height=4)
+         Group=factor(Group, labels=names(group_col)),
+         source=factor(source, levels=c("Observed", "Fitted"))) %>%
+  group_by(Species) %>%
+  group_split()
 
-map_dfr(data.c,
-        ~.x%>%
-          group_by(ZT, Group, Tank, Days) %>%
-          arrange(Chamber) %>%
-          summarise(Chamber_max=which.max(FishCount)) %>%
-          group_by(ZT, Group, Chamber_max) %>%
-          summarise(N=n()) %>%
-          group_by(ZT, Group) %>%
-          mutate(pr=N/sum(N)),
-        .id="Species") %>%
-  ungroup %>%
-  mutate(Species=factor(Species, levels=rev(names(species))),
-         Chamber_max=factor(Chamber_max),
-         Group=factor(Group, labels=c("Control CTE", "Acclimation", "Experiment"))) %>%
-  ggplot(aes(ZT, y=pr, fill=Chamber_max)) + 
-  geom_bar(stat="identity", colour="grey30", size=0.1) +
-  geom_rect(aes(xmin=-0.5, xmax=11.5, ymax=1.1, ymin=1.05), 
-            colour="grey30", fill="white", size=0.25) +
-  geom_rect(aes(xmin=11.5, xmax=23.5, ymax=1.1, ymin=1.05), 
-            colour="grey30", fill="grey30", size=0.25) +
-  scale_x_continuous(breaks=seq(0,23,by=2), limits=c(-0.5, 23.5)) + 
-  scale_fill_brewer("Chamber", type="div", palette="RdBu", direction=-1) +
-  facet_grid(Species~Group) +   
-  coord_polar(theta="x", start=(-0.5*pi*2)/24) +
-  theme(panel.grid.major=element_line(size=0.1, colour="grey")) +
-  labs(x="ZT (h)", y="Probability of highest fish density")
-ggsave("figs/pub/radial_chamber_distr_obs.png", width=7, height=4)
+fig7 <- map(chPr.ls, 
+    ~.x %>%
+      ggplot(aes(ZT, y=pr, fill=Chamber_max)) + 
+      geom_bar(stat="identity", colour="grey30", size=0.1) +
+      geom_rect(aes(xmin=-0.5, xmax=11.5, ymax=1.1, ymin=1.05), 
+                colour="grey30", fill="white", size=0.25) +
+      geom_rect(aes(xmin=11.5, xmax=23.5, ymax=1.1, ymin=1.05), 
+                colour="grey30", fill="grey30", size=0.25) +
+      scale_x_continuous(breaks=seq(0,23,by=2), limits=c(-0.5, 23.5)) +
+      scale_y_continuous(breaks=c(0, 0.5, 1)) +
+      scale_fill_brewer("Chamber", type="div", palette="RdBu", direction=-1) +
+      facet_grid(source~Group) +   
+      coord_polar(theta="x", start=(-0.5*pi*2)/24) +
+      theme(panel.grid.major=element_line(size=0.1, colour="grey"),
+            legend.key.size=unit(0.2, "cm")) +
+      labs(x="ZT (h)", y="Probability of highest fish density",
+           title=first(.x$Species)))
+ggpubr::ggarrange(plotlist=fig7, ncol=1, labels=c("a.", "b."), 
+                  common.legend=T, legend="bottom")
+ggsave("figs/pub/radial_chamber_distr.png", width=5.5, height=8)
 
 
-map_dfr(data.c,
-        ~.x%>%
-          group_by(ZT, Group, Chamber) %>%
-          summarise(meanFish=mean(FishCount, na.rm=T)) %>%
-          group_by(ZT, Group) %>%
-          mutate(pr=meanFish/sum(meanFish)),
-        .id="Species") %>%
-  ungroup %>%
-  mutate(Species=factor(Species, levels=rev(names(species))),
-         Chamber=factor(Chamber),
-         Group=factor(Group, labels=c("Control CTE", "Acclimation", "Experiment"))) %>%
-  ggplot(aes(ZT, y=pr, fill=Chamber)) + 
-  geom_bar(stat="identity", colour="grey30", size=0.1) +
-  geom_rect(aes(xmin=-0.5, xmax=11.5, ymax=1.1, ymin=1.05), 
-            colour="grey30", fill="white", size=0.25) +
-  geom_rect(aes(xmin=11.5, xmax=23.5, ymax=1.1, ymin=1.05), 
-            colour="grey30", fill="grey30", size=0.25) +
-  scale_x_continuous(breaks=seq(0,23,by=2), limits=c(-0.5, 23.5)) + 
-  scale_fill_brewer("Chamber", type="div", palette="RdBu", direction=-1) +
-  facet_grid(Species~Group) +   
-  coord_polar(theta="x", start=(-0.5*pi*2)/24) +
-  theme(panel.grid.major=element_line(size=0.1, colour="grey")) +
-  labs(x="ZT (h)", y="Proportion of fish (observed)")
-ggsave("figs/pub/radial_distr_obs.png", width=7, height=4)
-
-
-tube.df %>%
-  group_by(Species, ZT, Group) %>%
-  mutate(pr=pred.mn/sum(pred.mn)) %>%
-  ungroup %>%
-  mutate(Species=factor(Species, levels=rev(names(species))),
-         Chamber=factor(Chamber),
-         Group=factor(Group, labels=c("Control CTE", "Acclimation", "Experiment"))) %>%
-  ggplot(aes(ZT, y=pr, fill=Chamber)) + 
-  geom_bar(stat="identity", colour="grey30", size=0.1) +
-  geom_rect(aes(xmin=-0.5, xmax=11.5, ymax=1.1, ymin=1.05), 
-            colour="grey30", fill="white", size=0.25) +
-  geom_rect(aes(xmin=11.5, xmax=23.5, ymax=1.1, ymin=1.05), 
-            colour="grey30", fill="grey30", size=0.25) +
-  scale_x_continuous(breaks=seq(0,23,by=2), limits=c(-0.5, 23.5)) + 
-  scale_fill_brewer("Chamber", type="div", palette="RdBu", direction=-1) +
-  facet_grid(Species~Group) +   
-  coord_polar(theta="x", start=(-0.5*pi*2)/24) +
-  theme(panel.grid.major=element_line(size=0.1, colour="grey")) +
-  labs(x="ZT (h)", y="Distribution of fish (fitted)")
-ggsave("figs/pub/radial_distr_fit.png", width=7, height=4)
 
 
 # comparisons -------------------------------------------------------------
 
-# Mean temp
-map(out, ~hypothesis(.x, "GroupAcclimation = GroupExperiment"))
-map(out, ~hypothesis(.x, "GroupAcclimation = 0"))
-map(out, ~hypothesis(.x, "GroupExperiment = 0"))
+# Preferred temperature
+hyp_M <- c(M_CtrlAcc="M_GroupAcclimation = M_GroupControl",
+           M_CtrlExp="M_GroupExperiment = M_GroupControl",
+           M_AccExp="M_GroupAcclimation = M_GroupExperiment")
+map(out, ~hypothesis(.x, hyp_M))
 
-hyp_b <- c(cos_Ctrl="Icos6.283185MUZTD24 = 0",
-           cos_Acc="Icos6.283185MUZTD24:GroupAcclimation = 0",
-           cos_Exp="Icos6.283185MUZTD24:GroupExperiment = 0",
-           sin_Ctrl="Isin6.283185MUZTD24 = 0",
-           sin_Acc="Isin6.283185MUZTD24:GroupAcclimation = 0",
-           sin_Exp="Isin6.283185MUZTD24:GroupExperiment = 0")
+hyp_A <- c(A_Ctrl="A_GroupControl > 0.01",
+           A_Acc="A_GroupAcclimation > 0.01",
+           A_Exp="A_GroupExperiment > 0.01",
+           A_AccExp="A_GroupAcclimation = A_GroupExperiment")
+map(out, ~hypothesis(.x, hyp_A))
 
-hypothesis(out[[1]], hyp_b)
-hypothesis(out[[2]], hyp_b)
-
-
-hyp_b <- c(cos_Ctrl="Icos6.283185MUZTD24:Chamber1 = 0",
-           cos_Acc="Icos6.283185MUZTD24:GroupAcclimation = 0",
-           cos_Exp="Icos6.283185MUZTD24:GroupExperiment = 0",
-           sin_Ctrl="Isin6.283185MUZTD24 = 0",
-           sin_Acc="Isin6.283185MUZTD24:GroupAcclimation = 0",
-           sin_Exp="Isin6.283185MUZTD24:GroupExperiment = 0")
-hypothesis(out.c[[1]], hyp_b)
-hypothesis(out.c[[2]], hyp_b)
-
+hyp_phi <- c(phi_AccExp="phi_GroupAcclimation = phi_GroupExperiment",
+             phi_AccExp2="phi_GroupAcclimation - phi_GroupExperiment = -6.283185")
+map(out, ~hypothesis(.x, hyp_phi))
