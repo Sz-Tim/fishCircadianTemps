@@ -46,7 +46,7 @@ data.noNA <- data.df %>% filter(complete.cases(.))
 
 prior.nl <- c(prior(normal(0, 1), class="b", nlpar="A", lb=0),
               prior(normal(1, 1), class="b", nlpar="M", lb=0),
-              prior(uniform(0, 24), class="b", nlpar="phi", lb=0, ub=24),
+              prior(von_mises(0, 0), class="b", nlpar="phi"),
               prior(normal(0, 0.1), class="sd", nlpar="A", lb=0),
               prior(normal(0, 0.1), class="sd", nlpar="M", lb=0),
               prior(normal(0, 0.1), class="sd", nlpar="phi", lb=0),
@@ -55,16 +55,15 @@ prior.nl <- c(prior(normal(0, 1), class="b", nlpar="A", lb=0),
 
 # fit model ---------------------------------------------------------------
 
-out.nl <- brm(bf(ln_FishCount ~ M + A * cos(3.141593*(ZT + phi)/12),
-                 M ~ 0 + Group*Chamber + (0+Group*Chamber|Tank), 
-                 A ~ 0 + Group*Chamber + (0+Group*Chamber|Tank), 
-                 phi ~ 0 + Group*Chamber + (0+Group*Chamber|Tank),
-                 sigma ~ Group,
+out.nl <- brm(bf(ln_FishCount ~ M + A * cos(3.141593*(ZT)/12 + phi),
+                 M ~ 0 + Group:Chamber + (0+Group:Chamber|Tank), 
+                 A ~ 0 + Group:Chamber + (0+Group:Chamber|Tank), 
+                 phi ~ 0 + Group:Chamber + (0+Group:Chamber|Tank),
                  nl=TRUE),
               prior=prior.nl, 
               control=stan_args,
               iter=iter, warmup=warmup, init=0,
               data=data.noNA, cores=chains, chains=chains, refresh=50,
-              save_model=glue("models/nl/mod_count_{species}.stan"),
-              file=glue("models/nl/out_count_{species}"))
+              save_model=glue("models/nl/mod_count_vm_{species}.stan"),
+              file=glue("models/nl/out_count_vm_{species}"))
 
