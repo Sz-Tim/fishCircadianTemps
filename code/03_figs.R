@@ -14,6 +14,7 @@ library(glue)
 theme_set(theme_classic())
 group_col <- c(`Control CTE`="#1b9e77", Acclimation="#7570b3", Experiment="#d95f02")
 group_raw <- c("Control", "Acclimation", "Experiment")
+chmb_col <- c("1"="#0571b0", "2"="#92c5de", "3"="grey", "4"="#f4a582", "5"="#ca0020")
 cmr.ls <- readRDS("figs/cmr_cmaps.RDS")
 
 species <- c("Nile tilapia"="Tilapia", "Zebrafish"="ZF")
@@ -60,12 +61,12 @@ data.c <- map(species,
 out <- map(species, 
            ~readRDS(glue("models/cosinor/out_temperature_vm_{.x}.rds")))
 out.c <- map(species, 
-           ~readRDS(glue("models/cosinor/out_count_vm_{.x}.rds")))
+           ~readRDS(glue("models/cosinor/out_count_0CI_noLB_Cor_{.x}.rds")))
 # out.c <- map(species, 
 #              ~readRDS(glue("models/noCorr_randEff/out_count_RS_{.x}.rds")))
 
 pred.df <- map(data.df, 
-               ~expand_grid(ZT=unique(.x$ZT),
+               ~expand_grid(ZT=seq(0, 24, length.out=100),
                             Group=unique(.x$Group)))
 preds <- map2(out, pred.df, 
               ~posterior_epred(.x, newdata=.y, re.form=NA))
@@ -134,9 +135,9 @@ paramSum.ls <- map_dfr(
   .id="Species") %>%
   mutate(Param=str_split_fixed(param_OG, "_", 2)[,1],
          Group=str_split_fixed(param_OG, "_", 2)[,2]) %>%
-  mutate(draws=case_when(param_OG=="phi_Acclimation" & Species=="Nile tilapia" ~ (draws)*12/pi + 24,
-                         param_OG=="phi_Experiment" & Species=="Nile tilapia" ~ (draws)*12/pi,
-                         Param=="phi" & Species=="Zebrafish" ~ draws*12/pi + 12,
+  mutate(draws=case_when(param_OG=="phi_Acclimation" & Species=="Nile tilapia" ~ (-draws+pi)*12/pi-12,
+                         param_OG=="phi_Experiment" & Species=="Nile tilapia" ~ (-draws+pi)*12/pi+12,
+                         Param=="phi" & Species=="Zebrafish" ~ (-draws+pi)*12/pi-12,
                          Param!="phi" ~ draws)) %>%
   group_by(Species, Param, Group, param_OG) %>%
   summarise(mn=mean(draws),
@@ -196,7 +197,7 @@ fig5.ls <- map(1:3,
         geom_rect(aes(xmin=12, xmax=24, ymax=2.5, ymin=2.58), 
                   colour="grey30", fill="grey30", size=0.25)} +
       theme(legend.title=element_blank()))
-ggpubr::ggarrange(plotlist=fig5.ls, nrow=1, common.legend=T, legend="bottom", 
+p5.abc <- ggpubr::ggarrange(plotlist=fig5.ls, nrow=1, common.legend=T, legend="right", 
                   labels=paste0(letters[1:length(fig5.ls)], "."), 
                   widths=c(1.1, 1, 1))
 ggsave("figs/pub/effects.png", width=8, height=2, dpi=300)
@@ -275,10 +276,10 @@ temp.heat.T <- map(1:3,
                      {if(.x>1) ggtitle("")} +
                      {if(.x>1) theme(axis.text.y=element_blank())} +
                      facet_wrap(~Group))
-ggpubr::ggarrange(plotlist=c(temp.heat.ZF, temp.heat.T), nrow=2, ncol=3, 
+hm.plot <- ggpubr::ggarrange(plotlist=c(temp.heat.ZF, temp.heat.T), nrow=2, ncol=3, 
                   labels=c("a.", "", "", "b.", "", ""), 
                   widths=c(1.05, 1, 1))
-ggsave("figs/pub/heatmap_fitted.png", width=7, height=5.25, units="in")
+ggsave("figs/pub/heatmap_cosinor.png", hm.plot, width=7, height=5.25, units="in")
 
 
 
@@ -313,12 +314,142 @@ fig.tube <- tube.df %>%
       theme(legend.key.height=unit(0.25, "cm"),
             legend.position="bottom",
             panel.border=element_rect(colour="grey10", size=0.5, fill=NA)) 
-ggsave("figs/pub/tube_plot.png", width=5, height=4, units="in")
+ggsave("figs/pub/tube_plot_cosinor.png", fig.tube, width=5, height=4, units="in")
 
 
 
 
 
+
+# acrophase ---------------------------------------------------------------
+
+acro.df <- expand_grid(ZT=seq(0, 24, length.out=100),
+                       Chamber=1:5,
+                       Group=levels(data.c[[1]]$Group))
+acro.pred <- map_dfr(names(species), 
+                 ~posterior_epred(out.c[[.x]], newdata=acro.df, re.form=NA) %>%
+                   t() %>%
+                   as_tibble %>%
+                   bind_cols(acro.df, .) %>%
+                   pivot_longer(starts_with("V"),
+                                names_to="iter",
+                                values_to="pred") %>%
+                   mutate(iter=as.numeric(str_sub(iter, 2, -1))) %>%
+                   group_by(Chamber, Group, iter) %>%
+                   slice_max(order_by=pred), 
+                 .id="Species")
+
+acro.sum <- acro.pred %>% 
+  group_by(Chamber, Group, Species) %>%
+  summarise(mn=mean(ZT),
+            md=median(ZT),
+            CI80_l=quantile(ZT, 0.1),
+            CI80_h=quantile(ZT, 0.9),
+            CI90_l=quantile(ZT, 0.05),
+            CI90_h=quantile(ZT, 0.95),
+            CI95_l=quantile(ZT, 0.025),
+            CI95_h=quantile(ZT, 0.975)) %>%
+  ungroup %>%
+  mutate(Group=factor(Group, levels=group_raw, labels=names(group_col)),
+         Species=factor(Species, levels=1:2, labels=names(species)),
+         Chamber=factor(Chamber, levels=5:1))
+A_nonZero <- map_dfr(out.c, 
+                     ~fixef(.x) %>%
+                       as_tibble(rownames="variable") %>%
+                       filter(grepl("^A_", variable)) %>%
+                       mutate(nonZero=Q2.5 > 0.01),
+                     .id="Species") %>%
+  mutate(Chamber=factor(str_sub(variable, 10, 10), levels=1:5),
+         Group=case_when(grepl("Acclim", variable) ~ "Acclimation",
+                         grepl("Experi", variable) ~ "Experiment",
+                         !grepl("Acc|Exp", variable) ~ "Control")) %>%
+  mutate(Group=factor(Group, levels=group_raw, labels=names(group_col))) %>%
+  select(Species, Chamber, Group, nonZero)
+
+acro.sum <- acro.sum %>% 
+  full_join(., A_nonZero, by=c("Species", "Chamber", "Group")) %>%
+  mutate(CI80_l=if_else(nonZero, CI80_l, md),
+         CI80_h=if_else(nonZero, CI80_h, md),
+         CI90_l=if_else(nonZero, CI90_l, md),
+         CI90_h=if_else(nonZero, CI90_h, md)) %>%
+  mutate(Species=factor(Species, levels=rev(names(species))))
+
+pt_width <- 0.5
+p5.d <- acro.sum %>%
+  mutate(Group=factor(Group, levels=rev(levels(Group)))) %>%
+  ggplot(aes(y=Group, x=md, colour=Chamber, shape=nonZero)) +
+  geom_point(size=2, position=position_dodge(width=pt_width)) +
+  geom_errorbarh(aes(xmin=CI80_l, xmax=CI80_h), size=1.25, height=0,
+                 position=position_dodge(width=pt_width)) +
+  geom_errorbarh(aes(xmin=CI90_l, xmax=CI90_h), size=0.75, height=0,
+                 position=position_dodge(width=pt_width)) +
+  geom_errorbarh(aes(xmin=CI95_l, xmax=CI95_h), size=0.25, height=0.2,
+                 position=position_dodge(width=pt_width)) + 
+  scale_x_continuous("Acrophase (h)", limits=c(0,24), breaks=c(0,6,12,18,24)) +
+  geom_rect(aes(xmin=0, xmax=12, ymax=3.5, ymin=3.58), 
+            colour="grey30", fill="white", size=0.25) +
+  geom_rect(aes(xmin=12, xmax=24, ymax=3.5, ymin=3.58), 
+            colour="grey30", fill="grey30", size=0.25) +
+  scale_colour_manual(values=chmb_col) +
+  scale_shape_manual("Amplitude > 0", values=c(1, 19)) +
+  facet_wrap(~Species) +
+  theme(axis.title.y=element_blank(),
+        legend.title=element_text(size=10),
+        legend.key.height=unit(0.25, "cm"))
+p5.d <- ggpubr::ggarrange(p5.d, labels="d.")
+
+p5 <- ggpubr::ggarrange(p5.abc, p5.d, common.legend=F, nrow=2, ncol=1, 
+                        heights=c(0.7, 1))
+ggsave("figs/pub/effects_all.png", p5, width=8, height=4.5, dpi=300)
+
+pt_width <- 0.5
+p5.d_alt <- ggplot(acro.sum, aes(x=md, y=Chamber, colour=Group, shape=nonZero)) +
+  geom_point(size=2, position=position_dodge(width=pt_width)) +
+  geom_errorbarh(aes(xmin=CI80_l, xmax=CI80_h), size=1.25, height=0,
+                 position=position_dodge(width=pt_width)) +
+  geom_errorbarh(aes(xmin=CI90_l, xmax=CI90_h), size=0.75, height=0,
+                 position=position_dodge(width=pt_width)) +
+  geom_errorbarh(aes(xmin=CI95_l, xmax=CI95_h), size=0.25, height=0.2,
+                 position=position_dodge(width=pt_width)) + 
+  scale_x_continuous("Acrophase (h)", limits=c(0,24), breaks=c(0,6,12,18,24)) +
+  geom_rect(aes(xmin=0, xmax=12, ymax=5.5, ymin=5.58), 
+            colour="grey30", fill="white", size=0.25) +
+  geom_rect(aes(xmin=12, xmax=24, ymax=5.5, ymin=5.58), 
+            colour="grey30", fill="grey30", size=0.25) +
+  scale_colour_manual("", values=group_col) +
+  scale_shape_manual("Amplitude > 0", values=c(1, 19)) +
+  facet_wrap(~Species)
+p5.d_alt <- ggpubr::ggarrange(p5.d_alt, labels="d.")
+p5.abc_alt <- ggpubr::ggarrange(plotlist=fig5.ls, nrow=1, common.legend=T, legend="none", 
+                                labels=paste0(letters[1:length(fig5.ls)], "."), 
+                                widths=c(1.1, 1, 1))
+p5_alt <- ggpubr::ggarrange(p5.abc_alt, p5.d_alt, heights=c(0.6, 1),
+                            common.legend=T, legend="bottom",
+                            nrow=2, ncol=1)
+ggsave("figs/pub/effects_all_alt.png", p5_alt, width=8, height=4.5, dpi=300)
+
+
+
+
+
+# max temperature ---------------------------------------------------------
+
+pred.df <- map(data.df,
+               ~expand_grid(ZT=seq(0, 24, length.out=24*60),
+                            Group=unique(.x$Group)))
+preds <- map2(out, pred.df,
+              ~posterior_epred(.x, newdata=.y, re.form=NA))
+pred.df <- map2(pred.df, preds,
+                ~.x %>%
+                  mutate(pred.mn=apply(.y, 2, mean),
+                         CI80_l=apply(.y, 2, function(x) hdci(x, 0.8)[,1]),
+                         CI80_h=apply(.y, 2, function(x) hdci(x, 0.8)[,2]),
+                         CI90_l=apply(.y, 2, function(x) hdci(x, 0.9)[,1]),
+                         CI90_h=apply(.y, 2, function(x) hdci(x, 0.9)[,2]),
+                         CI95_l=apply(.y, 2, function(x) hdci(x, 0.95)[,1]),
+                         CI95_h=apply(.y, 2, function(x) hdci(x, 0.95)[,2])))
+map(pred.df, ~.x %>% group_by(Group) %>% slice_max(pred.mn))
+map(pred.df, ~.x %>% group_by(Group) %>% slice_min(pred.mn))
 
 
 # radial plots ------------------------------------------------------------
@@ -379,14 +510,14 @@ fig7 <- map(chPr.ls,
             legend.key.size=unit(0.2, "cm")) +
       labs(x="ZT (h)", y="Probability of highest fish density",
            title=first(.x$Species)))
-ggpubr::ggarrange(plotlist=fig7, ncol=1, labels=c("a.", "b."), 
+p <- ggpubr::ggarrange(plotlist=fig7, ncol=1, labels=c("a.", "b."), 
                   common.legend=T, legend="bottom")
-ggsave("figs/pub/radial_chamber_distr.png", width=5.5, height=8)
+ggsave("figs/pub/radial_chamber_distr_cosinor.png", p, width=5.5, height=8)
 
 
 
 
-# comparisons -------------------------------------------------------------
+ # comparisons -------------------------------------------------------------
 
 # Preferred temperature
 hyp_M <- c(M_CtrlAcc="M_GroupAcclimation = M_GroupControl",
