@@ -396,11 +396,32 @@ p5.d <- acro.sum %>%
   theme(axis.title.y=element_blank(),
         legend.title=element_text(size=10),
         legend.key.height=unit(0.25, "cm"))
-p5.d <- ggpubr::ggarrange(p5.d, labels="d.")
+p5.d_ALT <- acro.sum %>%
+  filter(nonZero) %>%
+  mutate(Group=factor(Group, levels=rev(levels(Group)))) %>%
+  ggplot(aes(y=Group, x=md, colour=Chamber)) +
+  geom_point(size=2, position=position_dodge(width=pt_width)) +
+  geom_errorbarh(aes(xmin=CI80_l, xmax=CI80_h), size=1.25, height=0,
+                 position=position_dodge(width=pt_width)) +
+  geom_errorbarh(aes(xmin=CI90_l, xmax=CI90_h), size=0.75, height=0,
+                 position=position_dodge(width=pt_width)) +
+  geom_errorbarh(aes(xmin=CI95_l, xmax=CI95_h), size=0.25, height=0.2,
+                 position=position_dodge(width=pt_width)) + 
+  scale_x_continuous("Acrophase (h)", limits=c(0,24), breaks=c(0,6,12,18,24)) +
+  geom_rect(aes(xmin=0, xmax=12, ymax=2.5, ymin=2.58), 
+            colour="grey30", fill="white", size=0.25) +
+  geom_rect(aes(xmin=12, xmax=24, ymax=2.5, ymin=2.58), 
+            colour="grey30", fill="grey30", size=0.25) +
+  scale_colour_manual(values=chmb_col) +
+  facet_wrap(~Species) +
+  theme(axis.title.y=element_blank(),
+        legend.title=element_text(size=10),
+        legend.key.height=unit(0.25, "cm"))
+p5.d <- ggpubr::ggarrange(p5.d_ALT, labels="d.")
 
 p5 <- ggpubr::ggarrange(p5.abc, p5.d, common.legend=F, nrow=2, ncol=1, 
-                        heights=c(0.7, 1))
-ggsave("figs/pub/effects_all.png", p5, width=8, height=4.5, dpi=300)
+                        heights=c(1, 1))
+ggsave("figs/pub/effects_all_ALT.png", p5, width=8, height=4, dpi=300)
 
 pt_width <- 0.5
 p5.d_alt <- ggplot(acro.sum, aes(x=md, y=Chamber, colour=Group, shape=nonZero)) +
