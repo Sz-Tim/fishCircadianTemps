@@ -58,6 +58,11 @@ data.c <- map(species,
                                   levels=group_raw))) %>%
   mutate(GrpDay=factor(paste(as.numeric(Group), str_pad(Days, 2, "l", "0"), sep="_"))))
 
+c_temp.sum <- map(data.c, ~.x %>% 
+                    filter(Group != "Control") %>%
+                    group_by(Chamber) %>% 
+                    summarise(Temp=mean(Temp, na.rm=T)))
+
 out <- map(species, 
            ~readRDS(glue("models/cosinor/out_temperature_vm_{.x}.rds")))
 out.c <- map(species, 
@@ -86,32 +91,36 @@ pred.df <- map2(pred.df, preds,
 
 fig1.ls <- map(2:1, 
                ~pred.df[[.x]] %>%
-                 mutate(Group=factor(Group, labels=names(group_col))) %>%
-  ggplot(aes(ZT, colour=Group, fill=Group)) + 
-  geom_jitter(data=data.df[[.x]] %>%
-                mutate(Group=factor(Group, labels=names(group_col))), 
-              aes(y=prefTemp, shape=Group),
-              alpha=0.8, size=0.95, width=0.4, height=0) +
-  geom_line(aes(y=pred.mn)) + 
-  geom_ribbon(aes(ymin=CI95_l, ymax=CI95_h), colour=NA, alpha=0.4) +
-  geom_rect(aes(xmin=0, xmax=12, ymax=temp_rng[[.x]][2],
-                ymin=temp_rng[[.x]][2]-diff(temp_rng[[.x]])*0.02), 
-            colour="grey30", fill="white", size=0.25) +
-  geom_rect(aes(xmin=12, xmax=24, ymax=temp_rng[[.x]][2],
-                ymin=temp_rng[[.x]][2]-diff(temp_rng[[.x]])*0.02), 
-            colour="grey30", fill="grey30", size=0.25) +
-  scale_fill_manual(values=group_col) +
-  scale_colour_manual(values=group_col) + 
-  scale_shape_manual(values=1:3) +
-  scale_x_continuous("ZT (h)", breaks=seq(0, 24, by=6)) +
-  scale_y_continuous("Preferred temperature (ºC)", limits=temp_rng[[.x]],
-                     breaks=seq(ceiling(temp_rng[[.x]][1]),
-                                floor(temp_rng[[.x]][2]),
-                                by=2)) +
-    ggtitle(names(pred.df)[.x]) +
-  theme(legend.position=c(0.8, 0.15),
-        legend.title=element_blank(), 
-        legend.background=element_blank()))
+                 filter(Group != "Control") %>%
+                 mutate(Group=factor(Group, labels=names(group_col)[2:3])) %>%
+                 ggplot(aes(ZT)) + 
+                 geom_jitter(data=data.df[[.x]] %>%
+                               filter(Group != "Control") %>%
+                               mutate(Group=factor(Group, labels=names(group_col)[2:3])), 
+                             aes(y=prefTemp, shape=Group, colour=Group),
+                             alpha=0.8, size=0.95, width=0.4, height=0) +
+                 geom_line(aes(y=pred.mn, colour=Group)) + 
+                 geom_ribbon(aes(ymin=CI95_l, ymax=CI95_h, fill=Group), colour=NA, alpha=0.4) +
+                 geom_rect(aes(xmin=0, xmax=12, ymax=temp_rng[[.x]][2],
+                               ymin=temp_rng[[.x]][2]-diff(temp_rng[[.x]])*0.02), 
+                           colour="grey30", fill="white", size=0.25) +
+                 geom_rect(aes(xmin=12, xmax=24, ymax=temp_rng[[.x]][2],
+                               ymin=temp_rng[[.x]][2]-diff(temp_rng[[.x]])*0.02), 
+                           colour="grey30", fill="grey30", size=0.25) +
+                 geom_text(data=c_temp.sum[[.x]], x=-1.5, colour=chmb_col,
+                           size=3.5, aes(label=Chamber, y=Temp)) +
+                 scale_fill_manual(values=group_col[2:3]) +
+                 scale_colour_manual(values=group_col[2:3]) + 
+                 scale_shape_manual(values=1:2) +
+                 scale_x_continuous("ZT (h)", breaks=seq(0, 24, by=6), limits=c(-1.25, 24)) +
+                 scale_y_continuous("Preferred temperature (ºC)", limits=temp_rng[[.x]],
+                                    breaks=seq(ceiling(temp_rng[[.x]][1]),
+                                               floor(temp_rng[[.x]][2]),
+                                               by=2)) +
+                 ggtitle(names(pred.df)[.x]) +
+                 theme(legend.position=c(0.8, 0.15),
+                       legend.title=element_blank(), 
+                       legend.background=element_blank()))
 
 fig.1 <- ggpubr::ggarrange(plotlist=fig1.ls, ncol=1, common.legend=T, 
                            legend="bottom", labels=c("a.", "b."))
@@ -152,6 +161,7 @@ paramSum.ls <- map_dfr(
   mutate(Group=factor(Group, levels=group_raw, labels=names(group_col)),
          Param=factor(Param, levels=c("M", "A", "phi"),
                       labels=c("MESOR", "Amplitude", "Acrophase"))) %>%
+  filter(Group != "Control CTE") %>% droplevels %>%
   group_by(Param) %>%
   group_split()
 
@@ -179,7 +189,7 @@ fig5.ls <- map(1:3,
                      position=position_dodge(width=pt_width)) +
       geom_errorbarh(aes(xmin=CI95_l, xmax=CI95_h), size=0.25, height=0.2,
                      position=position_dodge(width=pt_width)) +
-      scale_colour_manual(values=group_col) + 
+      scale_colour_manual(values=group_col[2:3]) + 
       scale_x_continuous(param_i$labs[.x], 
                          limits=param_i$lim[[.x]],
                          breaks=param_i$breaks[[.x]]) +
@@ -188,7 +198,7 @@ fig5.ls <- map(1:3,
       {if(.x>1) ylab("")} +
       {if(param_i$Param[.x]=="MESOR") 
         geom_errorbarh(data=temp_rng.df, aes(xmin=tmin, xmax=tmax),
-                       position=position_nudge(y=pt_width/6),
+                       # position=position_nudge(y=pt_width/6),
                        colour="grey", size=0.25, height=0.25)} +
       {if(param_i$Param[.x]=="Acrophase") 
         geom_rect(aes(xmin=0, xmax=12, ymax=2.5, ymin=2.58), 
@@ -222,7 +232,7 @@ pred.ls <- map2(data.c, out.c,
                  group_by(Group) %>%
                  group_split())
 nBins <- 20
-temp.heat.ZF <- map(1:3, 
+temp.heat.ZF <- map(2:3, 
                     ~pred.ls[[2]][[.x]] %>%
                       select(pred.mn, ZT, Group, Temp) %>% 
                       mutate(FishCount=round(pred.mn)) %>% 
@@ -243,13 +253,13 @@ temp.heat.ZF <- map(1:3,
                                          breaks=seq(ceiling(temp_rng[[2]][1]),
                                                     floor(temp_rng[[2]][2]),
                                                     by=2)) +
-                      {if(.x==1) ylab("Temperature (ºC)")} +
-                      {if(.x==1) ggtitle("Zebrafish")} +
-                      {if(.x>1) ylab("")} +
-                      {if(.x>1) ggtitle("")} +
-                      {if(.x>1) theme(axis.text.y=element_blank())} +
+                      {if(.x==2) ylab("Temperature (ºC)")} +
+                      {if(.x==2) ggtitle("Zebrafish")} +
+                      {if(.x>2) ylab("")} +
+                      {if(.x>2) ggtitle("")} +
+                      {if(.x>2) theme(axis.text.y=element_blank())} +
                       facet_wrap(~Group))
-temp.heat.T <- map(1:3, 
+temp.heat.T <- map(2:3, 
                    ~pred.ls[[1]][[.x]] %>%
                      select(pred.mn, ZT, Group, Temp) %>% 
                      mutate(FishCount=round(pred.mn)) %>% 
@@ -270,16 +280,16 @@ temp.heat.T <- map(1:3,
                                         breaks=seq(ceiling(temp_rng[[1]][1]),
                                                    floor(temp_rng[[1]][2]),
                                                    by=2)) +
-                     {if(.x==1) ylab("Temperature (ºC)")} +
-                     {if(.x==1) ggtitle("Nile tilapia")} +
-                     {if(.x>1) ylab("")} +
-                     {if(.x>1) ggtitle("")} +
-                     {if(.x>1) theme(axis.text.y=element_blank())} +
+                     {if(.x==2) ylab("Temperature (ºC)")} +
+                     {if(.x==2) ggtitle("Nile tilapia")} +
+                     {if(.x>2) ylab("")} +
+                     {if(.x>2) ggtitle("")} +
+                     {if(.x>2) theme(axis.text.y=element_blank())} +
                      facet_wrap(~Group))
-hm.plot <- ggpubr::ggarrange(plotlist=c(temp.heat.ZF, temp.heat.T), nrow=2, ncol=3, 
-                  labels=c("a.", "", "", "b.", "", ""), 
-                  widths=c(1.05, 1, 1))
-ggsave("figs/pub/heatmap_cosinor.png", hm.plot, width=7, height=5.25, units="in")
+hm.plot <- ggpubr::ggarrange(plotlist=c(temp.heat.ZF, temp.heat.T), nrow=2, ncol=2, 
+                  labels=c("a.", "", "b.", ""), 
+                  widths=c(1.05, 1))
+ggsave("figs/pub/heatmap_cosinor.png", hm.plot, width=5, height=5.25, units="in")
 
 
 
@@ -339,7 +349,9 @@ acro.pred <- map_dfr(names(species),
                    slice_max(order_by=pred), 
                  .id="Species")
 
-acro.sum <- acro.pred %>% 
+acro.sum <- acro.pred %>% ungroup %>%
+  mutate(ZT=case_when(Species!=1 | Chamber!=2 | Group!="Experiment" | ZT<12 ~ ZT,
+                      Species==1 & Chamber==2 & Group=="Experiment" & ZT>12 ~ ZT-24)) %>%
   group_by(Chamber, Group, Species) %>%
   summarise(mn=mean(ZT),
             md=median(ZT),
@@ -352,7 +364,13 @@ acro.sum <- acro.pred %>%
   ungroup %>%
   mutate(Group=factor(Group, levels=group_raw, labels=names(group_col)),
          Species=factor(Species, levels=1:2, labels=names(species)),
-         Chamber=factor(Chamber, levels=5:1))
+         Chamber=factor(Chamber, levels=5:1)) 
+acro.sum <- bind_rows(acro.sum %>%
+                        mutate(across(starts_with("CI"), ~.x*(.x>0))), 
+                      acro.sum %>% 
+                        filter(Species=="Nile tilapia" & Chamber==2 & Group=="Experiment") %>%
+                        mutate(mn=NA, md=NA) %>%
+                        mutate(across(starts_with("CI"), ~.x*(.x<0)+24)))
 A_nonZero <- map_dfr(out.c, 
                      ~fixef(.x) %>%
                        as_tibble(rownames="variable") %>%
@@ -405,8 +423,20 @@ p5.d_ALT <- acro.sum %>%
                  position=position_dodge(width=pt_width)) +
   geom_errorbarh(aes(xmin=CI90_l, xmax=CI90_h), size=0.75, height=0,
                  position=position_dodge(width=pt_width)) +
-  geom_errorbarh(aes(xmin=CI95_l, xmax=CI95_h), size=0.25, height=0.2,
+  geom_errorbarh(aes(xmin=CI95_l, xmax=CI95_h), size=0.25, height=0,
                  position=position_dodge(width=pt_width)) + 
+  geom_point(data=acro.sum %>%
+               filter(nonZero) %>%
+               mutate(Group=factor(Group, levels=rev(levels(Group))),
+                      CI95_l=replace(CI95_l, CI95_l==0, NA)),
+             aes(x=CI95_l), size=1.75, shape="|",
+             position=position_dodge(width=pt_width)) + 
+  geom_point(data=acro.sum %>%
+               filter(nonZero) %>%
+               mutate(Group=factor(Group, levels=rev(levels(Group))),
+                      CI95_h=replace(CI95_h, CI95_h==24, NA)),
+             aes(x=CI95_h), size=1.75, shape="|",
+             position=position_dodge(width=pt_width)) + 
   scale_x_continuous("Acrophase (h)", limits=c(0,24), breaks=c(0,6,12,18,24)) +
   geom_rect(aes(xmin=0, xmax=12, ymax=2.5, ymin=2.58), 
             colour="grey30", fill="white", size=0.25) +
@@ -449,6 +479,14 @@ p5_alt <- ggpubr::ggarrange(p5.abc_alt, p5.d_alt, heights=c(0.6, 1),
                             nrow=2, ncol=1)
 ggsave("figs/pub/effects_all_alt.png", p5_alt, width=8, height=4.5, dpi=300)
 
+
+
+acro.sum %>% 
+  arrange(Species, Group, desc(Chamber)) %>% 
+  select(Species, Group, Chamber, mn, CI95_l, CI95_h, nonZero) %>% 
+  mutate(across(where(is.numeric), ~signif(.x, 3))) %>% 
+  mutate(entry=if_else(nonZero, paste0(mn, " [", CI95_l, "-", CI95_h, "]"), "---")) %>%
+  write_csv("out/chamber_acrophase.csv")
 
 
 
@@ -555,3 +593,55 @@ map(out, ~hypothesis(.x, hyp_A))
 hyp_phi <- c(phi_AccExp="phi_GroupAcclimation = phi_GroupExperiment",
              phi_AccExp2="phi_GroupAcclimation - phi_GroupExperiment = -6.283185")
 map(out, ~hypothesis(.x, hyp_phi))
+
+
+# Preferred chamber
+hyp_Ctrl_M.df <- expand_grid(a=1:5, b=1:5) %>%
+  filter(a!=b) %>%
+  mutate(hyp=paste0("M_Chamber", a, " = M_Chamber", b),
+         name=paste0("M_", a, b))
+hyp_M <- setNames(hyp_Ctrl_M.df$hyp, hyp_Ctrl_M.df$name)
+map(out.c, ~hypothesis(.x, hyp_M))
+
+# Tilapia prefer 1 vs. 2, 3, or 4; and 5 vs. 4 with 95% confidence
+
+
+
+
+
+# chamber cosinor sum -----------------------------------------------------
+
+chamber_param.sum <- map_dfr(
+  out.c,
+  ~.x %>%
+    as_draws_df(variable="^b_(M|A|phi)", regex=T) %>%
+    rename_with(~str_remove(.x, "^b_")) %>%
+    rename_with(~str_remove(.x, "Group")) %>%
+    rename_with(~str_replace(.x, "Intercept", "Control")) %>%
+    select(-starts_with(".")) %>%
+    pivot_longer(everything(), names_to="param_OG", values_to="draws") %>%
+    filter(param_OG != "phi_Control"),
+  .id="Species") %>%
+  mutate(Param=str_split_fixed(param_OG, "_", 2)[,1],
+         Group=case_when(grepl("Acc", param_OG) ~ "Acclimation",
+                         grepl("Exp", param_OG) ~ "Experiment",
+                         !grepl("Acc", param_OG) & !grepl("Exp", param_OG) ~ "Control"),
+         Chamber=str_sub(str_split_fixed(param_OG, "Chamber", 2)[,2], 1, 1)) %>%
+  filter(Param != "phi") %>%
+  group_by(Species, Param, Group, Chamber) %>%
+  mutate(iter=row_number()) %>%
+  group_by(Species, Param, Chamber, iter)  %>%
+  mutate(draws=case_when(Group=="Control" ~ draws,
+                         Group!="Control" ~ first(draws)+draws)) %>%
+  mutate(draws=case_when(Param=="M" ~ expm1(draws),
+                         Param!="M" ~ draws)) %>%
+  group_by(Species, Param, Group, Chamber) %>%
+  summarise(mn=mean(draws),
+            md=median(draws),
+            CI95_l=hdci(draws, 0.95)[,1],
+            CI95_h=hdci(draws, 0.95)[,2]) %>%
+  ungroup %>%
+  mutate(Group=factor(Group, levels=group_raw, labels=names(group_col)),
+         Chamber=factor(Chamber),
+         Param=factor(Param, levels=c("M", "A"),
+                      labels=c("MESOR", "Amplitude")))
