@@ -16,7 +16,7 @@ group_col <- c(`Control CTE`="#1b9e77", Acclimation="#7570b3", Experiment="#d95f
 group_raw <- c("Control", "Acclimation", "Experiment")
 chmb_col <- c("1"="#0571b0", "2"="#92c5de", "3"="grey", "4"="#f4a582", "5"="#ca0020")
 cmr.ls <- readRDS("figs/cmr_cmaps.RDS")
-
+sp_col <- c("Nile tilapia"="#1a3431", "Zebrafish"="#6283c8")
 species <- c("Nile tilapia"="Tilapia", "Zebrafish"="ZF")
 temp_rng <- list(Tilapia=c(25.5, 34.5), ZF=c(24, 31.5))
 
@@ -32,9 +32,10 @@ data.df <- map(species,
                                           names_to="Chamber", values_to="Temp") %>%
                              mutate(Chamber=factor(str_sub(Chamber, -1, -1)),
                                     Group=factor(Group, levels=group_raw))) %>%
-  group_by(ZT, Group, Tank, Days) %>%
-  summarise(prefTemp=sum(FishCount*Temp)/(sum(FishCount))) %>%
-  ungroup)
+                 group_by(ZT, Group, Tank, Days) %>%
+                 summarise(prefTemp=sum(FishCount*Temp)/(sum(FishCount))) %>%
+                 ungroup %>%
+                 mutate(ElapsedTime=ZT+24*(Days-1)+24*3*(Group=="Experiment")))
 
 data.sum <- map(data.df, 
                 ~.x %>%
@@ -67,8 +68,8 @@ out <- map(species,
            ~readRDS(glue("models/cosinor/out_temperature_vm_{.x}.rds")))
 out.c <- map(species, 
            ~readRDS(glue("models/cosinor/out_count_0CI_noLB_Cor_{.x}.rds")))
-# out.c <- map(species, 
-#              ~readRDS(glue("models/noCorr_randEff/out_count_RS_{.x}.rds")))
+out.s <- map(species,
+             ~readRDS(glue("models/cosinor/acclimation_s_elapsedTime_{.x}.rds")))
 
 pred.df <- map(data.df, 
                ~expand_grid(ZT=seq(0, 24, length.out=100),
@@ -645,3 +646,99 @@ chamber_param.sum <- map_dfr(
          Chamber=factor(Chamber),
          Param=factor(Param, levels=c("M", "A"),
                       labels=c("MESOR", "Amplitude")))
+
+
+
+
+# smooth acclimation ------------------------------------------------------
+
+pred_s.dat <- expand_grid(ZT=0:24, Days=1:13, Tank=1) %>%
+  mutate(ElapsedTime=ZT+24*(Days-1),
+         ElapsedTime_sc=c(scale(ElapsedTime))) 
+pred_s.ls <- map(out.s,
+                 ~list(
+                   prefTemp=posterior_epred(.x, newdata=pred_s.dat, re_formula=NA),
+                   M=posterior_epred(.x, newdata=pred_s.dat, re_formula=NA, nlpar="M"),
+                   A=posterior_epred(.x, newdata=pred_s.dat, re_formula=NA, nlpar="A"),
+                   phi=posterior_epred(.x, newdata=pred_s.dat, re_formula=NA, nlpar="phi")
+                 ))
+for(i in seq_along(pred_s.ls)) {
+  pred_s.ls[[i]]$A <- exp(pred_s.ls[[i]]$A)
+  pred_s.ls[[i]]$phi <- pred_s.ls[[i]]$phi + 
+    2*pi*(pred_s.ls[[i]]$phi < -pi) - 
+    2*pi*(pred_s.ls[[i]]$phi > pi)
+  pred_s.ls[[i]]$phi <- (-pred_s.ls[[i]]$phi + pi)*12/pi-12
+  pred_s.ls[[i]]$phi <- pred_s.ls[[i]]$phi + 24*(pred_s.ls[[i]]$phi < 0)
+}
+pred_s.df <- map_dfr(
+  pred_s.ls, 
+  ~pred_s.dat %>%
+    mutate(prefTemp=colMeans(.x$prefTemp),
+           prefTemp_lo=apply(.x$prefTemp, 2, function(x) quantile(x, probs=0.025)),
+           prefTemp_hi=apply(.x$prefTemp, 2, function(x) quantile(x, probs=0.975)),
+           M=colMeans(.x$M),
+           M_lo=apply(.x$M, 2, function(x) quantile(x, probs=0.025)),
+           M_hi=apply(.x$M, 2, function(x) quantile(x, probs=0.975)),
+           A=colMeans(.x$A),
+           A_lo=apply(.x$A, 2, function(x) quantile(x, probs=0.025)),
+           A_hi=apply(.x$A, 2, function(x) quantile(x, probs=0.975)),
+           phi=colMeans(.x$phi),
+           phi_lo=apply(.x$phi, 2, function(x) quantile(x, probs=0.025)),
+           phi_hi=apply(.x$phi, 2, function(x) quantile(x, probs=0.975))), 
+  .id="Species")
+
+p.Temp <- ggplot(pred_s.df, aes(ElapsedTime, prefTemp, colour=Species, fill=Species)) +
+  geom_vline(xintercept=72, linetype=2, colour="grey30") +
+  geom_point(data=map_dfr(data.df, ~filter(.x, Group!="Control"), .id="Species"), 
+             size=0.25, alpha=0.25) +
+  geom_ribbon(aes(ymin=prefTemp_lo, ymax=prefTemp_hi), alpha=0.3, colour=NA) +
+  geom_line() +
+  scale_x_continuous("Elapsed hours", breaks=24*(0:13)) + 
+  scale_colour_manual(values=sp_col) +
+  scale_fill_manual(values=sp_col) +
+  geom_rug(data=tibble(ElapsedTime=0, 
+                       prefTemp=unlist(temp_rng), 
+                       Species=rep(names(sp_col), each=2)), sides="l", size=1) +
+  ylab("Preferred temperature (ºC)")
+ggsave("figs/pub/smooth_prefTemp.png", p.Temp, width=8, height=4, dpi=300)
+
+p.M <- ggplot(pred_s.df, aes(ElapsedTime, M, colour=Species, fill=Species)) +
+  geom_vline(xintercept=72, linetype=2, colour="grey30") +
+  geom_ribbon(aes(ymin=M_lo, ymax=M_hi), alpha=0.3, colour=NA) +
+  geom_line() +
+  geom_rug(data=tibble(ElapsedTime=0, 
+                       M=unlist(temp_rng), 
+                       Species=rep(names(sp_col), each=2)), sides="l", size=1) +
+  scale_x_continuous("Elapsed hours", breaks=24*(0:13)) + 
+  scale_colour_manual(values=sp_col) +
+  scale_fill_manual(values=sp_col) +
+  ylab("MESOR (ºC)")
+ggsave("figs/pub/smooth_M.png", p.M, width=8, height=4)
+
+p.A <- ggplot(pred_s.df, aes(ElapsedTime, A, colour=Species, fill=Species)) +
+  geom_vline(xintercept=72, linetype=2, colour="grey30") +
+  geom_ribbon(aes(ymin=A_lo, ymax=A_hi), alpha=0.3, colour=NA) +
+  geom_line() +
+  scale_x_continuous("Elapsed hours", breaks=24*(0:13)) + 
+  scale_y_continuous("Amplitude", breaks=c(0, 0.5, 1), limits=c(0, 1.2)) + 
+  scale_colour_manual(values=sp_col) +
+  scale_fill_manual(values=sp_col) 
+ggsave("figs/pub/smooth_A.png", p.A, width=8, height=4)
+
+p.phi <- ggplot(pred_s.df, aes(ElapsedTime, phi, colour=Species, fill=Species)) +
+  geom_vline(xintercept=72, linetype=2, colour="grey30") +
+  geom_rect(aes(xmin=-6, xmax=-3, ymax=12, ymin=24), 
+            colour="grey30", fill="white", size=0.25) +
+  geom_rect(aes(xmin=-6, xmax=-3, ymax=0, ymin=12), 
+            colour="grey30", fill="grey30", size=0.25) +
+  geom_ribbon(aes(ymin=phi_lo, ymax=phi_hi), alpha=0.3, colour=NA) +
+  geom_line() + 
+  scale_x_continuous("Elapsed hours", breaks=24*(0:13)) + 
+  scale_y_continuous("Acrophase (ZT h)", breaks=c(0, 6, 12, 18, 24), limits=c(0,24)) + 
+  scale_colour_manual(values=sp_col) +
+  scale_fill_manual(values=sp_col) 
+ggsave("figs/pub/smooth_phi.png", p.phi, width=8, height=4)
+
+ggpubr::ggarrange(p.Temp, p.M, p.A, p.phi, ncol=2, nrow=2, common.legend=T, 
+                  labels="auto")
+ggsave("figs/pub/smooth_all.png", width=10, height=6, dpi=300)

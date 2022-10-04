@@ -100,17 +100,17 @@ pred.ls$phi <- (-pred.ls$phi+pi)*12/pi-12
 pred.ls$phi <- pred.ls$phi + 24*(pred.ls$phi < 0)
 pred.df <- pred.dat %>%
   mutate(pred=colMeans(pred.ls$prefTemp),
-         pred_lo=apply(pred.ls$prefTemp, 2, function(x) quantile(x, probs=0.1)),
-         pred_hi=apply(pred.ls$prefTemp, 2, function(x) quantile(x, probs=0.9)),
+         pred_lo=apply(pred.ls$prefTemp, 2, function(x) quantile(x, probs=0.025)),
+         pred_hi=apply(pred.ls$prefTemp, 2, function(x) quantile(x, probs=0.975)),
          pred_M=colMeans(pred.ls$M),
-         pred_M_lo=apply(pred.ls$M, 2, function(x) quantile(x, probs=0.1)),
-         pred_M_hi=apply(pred.ls$M, 2, function(x) quantile(x, probs=0.9)),
+         pred_M_lo=apply(pred.ls$M, 2, function(x) quantile(x, probs=0.025)),
+         pred_M_hi=apply(pred.ls$M, 2, function(x) quantile(x, probs=0.975)),
          pred_A=colMeans(pred.ls$A),
-         pred_A_lo=apply(pred.ls$A, 2, function(x) quantile(x, probs=0.1)),
-         pred_A_hi=apply(pred.ls$A, 2, function(x) quantile(x, probs=0.9)),
+         pred_A_lo=apply(pred.ls$A, 2, function(x) quantile(x, probs=0.025)),
+         pred_A_hi=apply(pred.ls$A, 2, function(x) quantile(x, probs=0.975)),
          pred_phi=colMeans(pred.ls$phi),
-         pred_phi_lo=apply(pred.ls$phi, 2, function(x) quantile(x, probs=0.1)),
-         pred_phi_hi=apply(pred.ls$phi, 2, function(x) quantile(x, probs=0.9)))
+         pred_phi_lo=apply(pred.ls$phi, 2, function(x) quantile(x, probs=0.025)),
+         pred_phi_hi=apply(pred.ls$phi, 2, function(x) quantile(x, probs=0.975)))
 
 temp_rng <- list(Tilapia=c(25.5, 34.5), ZF=c(24, 31.5))
 
@@ -141,7 +141,7 @@ ggplot(pred.df %>% filter(Tank==1), aes(ElapsedTime, pred_A)) +
   geom_ribbon(aes(ymin=pred_A_lo, ymax=pred_A_hi), alpha=0.3, colour=NA) +
   geom_line() +
   scale_x_continuous("Elapsed hours", breaks=24*(0:13)) + 
-  scale_y_continuous("Amplitude", breaks=c(0, 0.5, 1), limits=c(0, 1.1)) + 
+  scale_y_continuous("Amplitude", breaks=c(0, 0.5, 1), limits=c(0, 1.2)) + 
   ggtitle(species)
 ggsave(paste0("figs/sTime_A_", species, ".jpg"), width=6, height=3)
 
