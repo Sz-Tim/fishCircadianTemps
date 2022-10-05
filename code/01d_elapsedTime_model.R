@@ -62,7 +62,6 @@ if(species=="ZF") {
   prior.nl <- c(prior(normal(0, 1), class="b", nlpar="A"),
                 prior(normal(30, 2), class="b", coef="Intercept", nlpar="M"),
                 prior(normal(0, 1), class="b", nlpar="M"),
-                prior(von_mises(0, 1), nlpar="phi", lb=-3.141593, ub=3.141593),
                 prior(von_mises(0, 1), class="b", nlpar="phi", lb=-3.141593, ub=3.141593),
                 prior(normal(0, 0.1), class="sd", nlpar="A", lb=0),
                 prior(normal(0, 0.1), class="sd", nlpar="M", lb=0),

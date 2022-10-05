@@ -44,7 +44,7 @@ data.df <- readxl::read_xlsx(dir("data", glue("{species}_.*RawData2"), full.name
 
 data.noNA <- data.df %>% filter(complete.cases(.))
 
-prior.nl <- c(prior(normal(0, 1), class="b", nlpar="A", lb=0),
+prior.nl <- c(prior(normal(0, 1), class="b", nlpar="A"),
               prior(normal(1, 1), class="b", nlpar="M", lb=0),
               prior(von_mises(0, 0.001), class="b", nlpar="phi", lb=-3.141593, ub=3.141593),
               prior(normal(0, 0.1), class="sd", nlpar="A", lb=0),
@@ -55,7 +55,7 @@ prior.nl <- c(prior(normal(0, 1), class="b", nlpar="A", lb=0),
 
 # fit model ---------------------------------------------------------------
 
-out.nl <- brm(bf(ln_FishCount ~ M + A * cos(3.141593*(ZT)/12 + phi),
+out.nl <- brm(bf(ln_FishCount ~ M + exp(A) * cos(3.141593*(ZT)/12 + phi),
                  M ~ 0 + Group:Chamber + (0+Group:Chamber|Tank), 
                  A ~ 0 + Group:Chamber + (0+Group:Chamber|Tank), 
                  phi ~ 0 + Group:Chamber + (0+Group:Chamber|Tank),
