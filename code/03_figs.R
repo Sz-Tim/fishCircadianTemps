@@ -149,6 +149,8 @@ paramSum.ls <- map_dfr(
                          param_OG=="phi_Experiment" & Species=="Nile tilapia" ~ (-draws+pi)*12/pi+12,
                          Param=="phi" & Species=="Zebrafish" ~ (-draws+pi)*12/pi-12,
                          Param!="phi" ~ draws)) %>%
+  mutate(draws=case_when(param=="A" ~ exp(draws),
+                         param!="A" ~ draws))
   group_by(Species, Param, Group, param_OG) %>%
   summarise(mn=mean(draws),
             md=median(draws),
@@ -334,6 +336,8 @@ ggsave("figs/pub/tube_plot_cosinor.png", fig.tube, width=5, height=4, units="in"
 
 # acrophase ---------------------------------------------------------------
 
+# WARNING: If the model was re-run, it might use exp(A), which may affect this.
+# I think I fixed it, but if anything looks weird that's probably it
 acro.df <- expand_grid(ZT=seq(0, 24, length.out=100),
                        Chamber=1:5,
                        Group=levels(data.c[[1]]$Group))
@@ -376,7 +380,7 @@ A_nonZero <- map_dfr(out.c,
                      ~fixef(.x) %>%
                        as_tibble(rownames="variable") %>%
                        filter(grepl("^A_", variable)) %>%
-                       mutate(nonZero=Q2.5 > 0.01),
+                       mutate(nonZero=exp(Q2.5) > 0.01),
                      .id="Species") %>%
   mutate(Chamber=factor(str_sub(variable, 10, 10), levels=1:5),
          Group=case_when(grepl("Acclim", variable) ~ "Acclimation",
@@ -585,9 +589,9 @@ hyp_M <- c(M_CtrlAcc="M_GroupAcclimation = M_GroupControl",
            M_AccExp="M_GroupAcclimation = M_GroupExperiment")
 map(out, ~hypothesis(.x, hyp_M))
 
-hyp_A <- c(A_Ctrl="A_GroupControl > 0.01",
-           A_Acc="A_GroupAcclimation > 0.01",
-           A_Exp="A_GroupExperiment > 0.01",
+hyp_A <- c(A_Ctrl="exp(A_GroupControl) > 0.01",
+           A_Acc="exp(A_GroupAcclimation) > 0.01",
+           A_Exp="exp(A_GroupExperiment) > 0.01",
            A_AccExp="A_GroupAcclimation = A_GroupExperiment")
 map(out, ~hypothesis(.x, hyp_A))
 
@@ -636,6 +640,8 @@ chamber_param.sum <- map_dfr(
                          Group!="Control" ~ first(draws)+draws)) %>%
   mutate(draws=case_when(Param=="M" ~ expm1(draws),
                          Param!="M" ~ draws)) %>%
+  mutate(draws=case_when(Param=="A" ~ exp(draws),
+                         Param!="A" ~ draws))
   group_by(Species, Param, Group, Chamber) %>%
   summarise(mn=mean(draws),
             md=median(draws),
@@ -652,7 +658,7 @@ chamber_param.sum <- map_dfr(
 
 # smooth acclimation ------------------------------------------------------
 
-pred_s.dat <- expand_grid(ZT=0:24, Days=1:13, Tank=1) %>%
+pred_s.dat <- expand_grid(ZT=0:23, Days=1:13, Tank=1) %>%
   mutate(ElapsedTime=ZT+24*(Days-1),
          ElapsedTime_sc=c(scale(ElapsedTime))) 
 pred_s.ls <- map(out.s,
@@ -742,3 +748,11 @@ ggsave("figs/pub/smooth_phi.png", p.phi, width=8, height=4)
 ggpubr::ggarrange(p.Temp, p.M, p.A, p.phi, ncol=2, nrow=2, common.legend=T, 
                   labels="auto")
 ggsave("figs/pub/smooth_all.png", width=10, height=6, dpi=300)
+
+
+pred_s.df %>% filter(ElapsedTime %in% (24*c(0, 3))) %>% 
+  select(Species, ElapsedTime, starts_with("M"))
+pred_s.df %>% filter(ElapsedTime %in% (24*c(0, 3))) %>% 
+  select(Species, ElapsedTime, starts_with("A"))
+pred_s.df %>% filter(ElapsedTime %in% (24*c(0, 3))) %>% 
+  select(Species, ElapsedTime, starts_with("phi"))
