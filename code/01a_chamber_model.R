@@ -8,7 +8,7 @@
 
 # switches ----------------------------------------------------------------
 
-species <- c("ZF", "Tilapia")[1]
+species <- c("ZF", "Tilapia")[2]
 iter <- 4000
 warmup <- 3000
 chains <- 4
@@ -64,6 +64,6 @@ out.nl <- brm(bf(ln_FishCount ~ M + exp(A) * cos(3.141593*(ZT)/12 + phi),
               control=stan_args,
               iter=iter, warmup=warmup, init=0,
               data=data.noNA, cores=chains, chains=chains, refresh=50,
-              save_model=glue("models/nl/mod_count_vm_{species}.stan"),
-              file=glue("models/nl/out_count_vm_{species}"))
+              save_model=glue("models/cosinor/mod_count_vm_expA_{species}.stan"),
+              file=glue("models/cosinor/out_count_vm_expA_{species}"))
 

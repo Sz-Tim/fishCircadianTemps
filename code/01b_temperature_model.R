@@ -8,7 +8,7 @@
 
 # switches ----------------------------------------------------------------
 
-species <- c("ZF", "Tilapia")[1]
+species <- c("ZF", "Tilapia")[2]
 iter <- 4000
 warmup <- 3000
 chains <- 4
@@ -34,6 +34,7 @@ data.df <- readxl::read_xlsx(dir("data", glue("{species}_.*RawData2"), full.name
               pivot_longer(starts_with("chamber_"), names_to="Chamber", values_to="Temp") %>%
               mutate(Chamber=factor(str_sub(Chamber, -1, -1)),
                      Group=factor(Group, levels=c("Control", "Acclimation", "Experiment")))) %>%
+  filter(Group != "Control") %>%
   group_by(ZT, Group, Tank, Days) %>%
   summarise(prefTemp=sum(FishCount*Temp)/(sum(FishCount))) %>%
   ungroup %>%
@@ -76,5 +77,5 @@ out.nl <- brm(bf(prefTemp ~ M + exp(A) * cos(3.141593*(ZT)/12 + phi),
               control=stan_args,
               iter=iter, warmup=warmup, init=0,
               data=data.noNA, cores=chains, chains=chains, refresh=50,
-              save_model=glue("models/nl/mod_temperature_vm_{species}.stan"),
-              file=glue("models/nl/out_temperature_vm_{species}"))
+              save_model=glue("models/cosinor/mod_temperature_vm_expA_{species}.stan"),
+              file=glue("models/cosinor/out_temperature_vm_expA_{species}"))

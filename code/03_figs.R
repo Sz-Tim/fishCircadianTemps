@@ -65,15 +65,15 @@ c_temp.sum <- map(data.c, ~.x %>%
                     summarise(Temp=mean(Temp, na.rm=T)))
 
 out <- map(species, 
-           ~readRDS(glue("models/cosinor/out_temperature_vm_{.x}.rds")))
+           ~readRDS(glue("models/cosinor/out_temperature_vm_expA_{.x}.rds")))
 out.c <- map(species, 
            ~readRDS(glue("models/cosinor/out_count_0CI_noLB_Cor_{.x}.rds")))
 out.s <- map(species,
              ~readRDS(glue("models/cosinor/acclimation_s_elapsedTime_{.x}.rds")))
 
-pred.df <- map(data.df, 
-               ~expand_grid(ZT=seq(0, 24, length.out=100),
-                            Group=unique(.x$Group)))
+pred.df <- map(data.df, ~filter(.x, Group != "Control") %>% droplevels) %>%
+  map(~expand_grid(ZT=seq(0, 24, length.out=100),
+                   Group=unique(.x$Group)))
 preds <- map2(out, pred.df, 
               ~posterior_epred(.x, newdata=.y, re.form=NA))
 pred.df <- map2(pred.df, preds, 
@@ -125,7 +125,7 @@ fig1.ls <- map(2:1,
 
 fig.1 <- ggpubr::ggarrange(plotlist=fig1.ls, ncol=1, common.legend=T, 
                            legend="bottom", labels=c("a.", "b."))
-ggsave("figs/pub/pref_temp_by_ZT.png", width=4, height=7, units="in")
+ggsave("figs/pub/pref_temp_by_ZT_expA.png", width=4, height=7, units="in")
 
 
 
@@ -145,12 +145,18 @@ paramSum.ls <- map_dfr(
   .id="Species") %>%
   mutate(Param=str_split_fixed(param_OG, "_", 2)[,1],
          Group=str_split_fixed(param_OG, "_", 2)[,2]) %>%
-  mutate(draws=case_when(param_OG=="phi_Acclimation" & Species=="Nile tilapia" ~ (-draws+pi)*12/pi-12,
-                         param_OG=="phi_Experiment" & Species=="Nile tilapia" ~ (-draws+pi)*12/pi+12,
-                         Param=="phi" & Species=="Zebrafish" ~ (-draws+pi)*12/pi-12,
+  # mutate(draws=case_when(param_OG=="phi_Acclimation" & Species=="Nile tilapia" ~ (-draws+pi)*12/pi-12,
+                         # param_OG=="phi_Experiment" & Species=="Nile tilapia" ~ (-draws+pi)*12/pi+12,
+                         # Param=="phi" & Species=="Zebrafish" ~ (-draws+pi)*12/pi-12,
+                         # Param!="phi" ~ draws)) %>%
+  mutate(draws=case_when(Param=="phi" ~ draws + 2*pi*(draws< -pi) - 2*pi*(draws > pi),
                          Param!="phi" ~ draws)) %>%
-  mutate(draws=case_when(param=="A" ~ exp(draws),
-                         param!="A" ~ draws))
+  mutate(draws=case_when(Param=="phi" ~ (-draws + pi)*12/pi-12,
+                         Param!="phi" ~ draws)) %>%
+  mutate(draws=case_when(Param=="phi" ~ draws + 24*(draws < 0),
+                         Param!="phi" ~ draws)) %>%
+  mutate(draws=case_when(Param=="A" ~ exp(draws),
+                         Param!="A" ~ draws)) %>%
   group_by(Species, Param, Group, param_OG) %>%
   summarise(mn=mean(draws),
             md=median(draws),
@@ -213,7 +219,7 @@ fig5.ls <- map(1:3,
 p5.abc <- ggpubr::ggarrange(plotlist=fig5.ls, nrow=1, common.legend=T, legend="right", 
                   labels=paste0(letters[1:length(fig5.ls)], "."), 
                   widths=c(1.1, 1, 1))
-ggsave("figs/pub/effects.png", width=8, height=2, dpi=300)
+ggsave("figs/pub/effects_expA.png", width=8, height=2, dpi=300)
 
 
 
@@ -584,13 +590,10 @@ ggsave("figs/pub/radial_chamber_distr_cosinor.png", p, width=5.5, height=8)
  # comparisons -------------------------------------------------------------
 
 # Preferred temperature
-hyp_M <- c(M_CtrlAcc="M_GroupAcclimation = M_GroupControl",
-           M_CtrlExp="M_GroupExperiment = M_GroupControl",
-           M_AccExp="M_GroupAcclimation = M_GroupExperiment")
+hyp_M <- c(M_AccExp="M_GroupAcclimation = M_GroupExperiment")
 map(out, ~hypothesis(.x, hyp_M))
 
-hyp_A <- c(A_Ctrl="exp(A_GroupControl) > 0.01",
-           A_Acc="exp(A_GroupAcclimation) > 0.01",
+hyp_A <- c(A_Acc="exp(A_GroupAcclimation) > 0.01",
            A_Exp="exp(A_GroupExperiment) > 0.01",
            A_AccExp="A_GroupAcclimation = A_GroupExperiment")
 map(out, ~hypothesis(.x, hyp_A))
