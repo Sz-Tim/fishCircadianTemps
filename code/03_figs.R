@@ -35,7 +35,8 @@ data.df <- map(species,
                  group_by(ZT, Group, Tank, Days) %>%
                  summarise(prefTemp=sum(FishCount*Temp)/(sum(FishCount))) %>%
                  ungroup %>%
-                 mutate(ElapsedTime=ZT+24*(Days-1)+24*3*(Group=="Experiment")))
+                 mutate(ElapsedTime=ZT+24*(Days-1)+24*3*(Group=="Experiment"),
+                        ElapsedDays=ElapsedTime/24))
 
 data.sum <- map(data.df, 
                 ~.x %>%
@@ -64,12 +65,10 @@ c_temp.sum <- map(data.c, ~.x %>%
                     group_by(Chamber) %>% 
                     summarise(Temp=mean(Temp, na.rm=T)))
 
-out <- map(species, 
-           ~readRDS(glue("models/cosinor/out_temperature_vm_expA_{.x}.rds")))
-out.c <- map(species, 
-           ~readRDS(glue("models/cosinor/out_count_0CI_noLB_Cor_{.x}.rds")))
-out.s <- map(species,
-             ~readRDS(glue("models/cosinor/acclimation_s_elapsedTime_{.x}.rds")))
+out <- map(species, ~readRDS(glue("models/cosinor/out_temperature_vm_expA_{.x}.rds")))
+out.c <- map(species, ~readRDS(glue("models/cosinor/out_count_0CI_noLB_Cor_{.x}.rds")))
+out.GS_global <- map_dfr(species, ~read_csv(glue("out/GS_predGlobal_{.x}.csv")))
+out.GS_tank <- map_dfr(species, ~read_csv(glue("out/GS_predTank_{.x}.csv")))
 
 pred.df <- map(data.df, ~filter(.x, Group != "Control") %>% droplevels) %>%
   map(~expand_grid(ZT=seq(0, 24, length.out=100),
@@ -673,11 +672,7 @@ pred_s.ls <- map(out.s,
                  ))
 for(i in seq_along(pred_s.ls)) {
   pred_s.ls[[i]]$A <- exp(pred_s.ls[[i]]$A)
-  pred_s.ls[[i]]$phi <- pred_s.ls[[i]]$phi + 
-    2*pi*(pred_s.ls[[i]]$phi < -pi) - 
-    2*pi*(pred_s.ls[[i]]$phi > pi)
-  pred_s.ls[[i]]$phi <- (-pred_s.ls[[i]]$phi + pi)*12/pi-12
-  pred_s.ls[[i]]$phi <- pred_s.ls[[i]]$phi + 24*(pred_s.ls[[i]]$phi < 0)
+  pred_s.ls[[i]]$phi <- phi_to_ZT(pred_s.ls[[i]]$phi)
 }
 pred_s.df <- map_dfr(
   pred_s.ls, 
@@ -759,3 +754,138 @@ pred_s.df %>% filter(ElapsedTime %in% (24*c(0, 3))) %>%
   select(Species, ElapsedTime, starts_with("A"))
 pred_s.df %>% filter(ElapsedTime %in% (24*c(0, 3))) %>% 
   select(Species, ElapsedTime, starts_with("phi"))
+
+
+
+
+
+
+
+# HGAM --------------------------------------------------------------------
+
+out.GS_global <- out.GS_global %>% mutate(Spline=factor("Global", levels=c("Global", "Tank")))
+out.GS_tank <- out.GS_tank %>% mutate(Tank=factor(Tank))
+lower_ZT.df <- tibble(light_1=0:12,
+                      light_2=c(0:12)+0.5,
+                      dark_1=c(0:12)+0.5,
+                      dark_2=1:13,
+                      temp_1=min(unlist(temp_rng)),
+                      temp_2=min(unlist(temp_rng))+0.2,
+                      amp_1=0, amp_2=0.025,
+                      acro_1=0, acro_2=0.4,
+                      ElapsedDays=0, pred=30, M=30, amplitude=0, acrophase=12)
+
+p.Temp <- ggplot(out.GS_global, aes(ElapsedDays, pred, colour=Species, fill=Species)) +
+  geom_point(data=map_dfr(data.df, ~filter(.x, Group!="Control"), .id="Species"), 
+             aes(y=prefTemp), size=0.25, alpha=0.25) +
+  geom_ribbon(aes(ymin=pred_lo, ymax=pred_hi), alpha=0.2, colour=NA) +
+  geom_line(aes(size=Spline)) +
+  geom_line(data=out.GS_tank, aes(group=paste(Species, Tank)), size=0.3) +
+  scale_x_continuous("Elapsed time (days)", breaks=0:13, limits=c(0,13)) + 
+  scale_colour_manual(values=sp_col) +
+  scale_fill_manual(values=sp_col) +
+  scale_size_manual(values=c(1, 0.3), drop=F) + 
+  geom_rug(data=tibble(ElapsedDays=0, 
+                       pred=unlist(temp_rng), 
+                       Species=rep(names(sp_col), each=2)), sides="l", size=1) +
+  geom_rect(data=lower_ZT.df, fill="white", colour="grey30", size=0.1,
+            aes(ymin=temp_1, ymax=temp_2, xmin=light_1, xmax=light_2)) +
+  geom_rect(data=lower_ZT.df, fill="grey30", colour="grey30", size=0.1,
+            aes(ymin=temp_1, ymax=temp_2, xmin=dark_1, xmax=dark_2)) +
+  ylab("Preferred temperature (ºC)")
+ggsave("figs/pub/smooth_prefTemp.png", p.Temp, width=8, height=4, dpi=300)
+
+p.M <- ggplot(out.GS_global, aes(ElapsedDays, M, colour=Species, fill=Species)) +
+  geom_ribbon(aes(ymin=M_lo, ymax=M_hi), alpha=0.25, colour=NA) +
+  geom_line(aes(size=Spline)) +
+  geom_line(data=out.GS_tank, aes(group=paste(Species, Tank)), size=0.3) +
+  geom_rug(data=tibble(ElapsedDays=0, 
+                       M=unlist(temp_rng), 
+                       Species=rep(names(sp_col), each=2)), sides="l", size=1) +
+  geom_rect(data=lower_ZT.df, fill="white", colour="grey30", size=0.1,
+            aes(ymin=temp_1, ymax=temp_2, xmin=light_1, xmax=light_2)) +
+  geom_rect(data=lower_ZT.df, fill="grey30", colour="grey30", size=0.1,
+            aes(ymin=temp_1, ymax=temp_2, xmin=dark_1, xmax=dark_2)) +
+  scale_x_continuous("Elapsed time (days)", breaks=0:13, limits=c(0,13)) + 
+  scale_colour_manual(values=sp_col) +
+  scale_fill_manual(values=sp_col) +
+  scale_size_manual(values=c(1, 0.3), drop=F) + 
+  ylab("MESOR (ºC)")
+ggsave("figs/pub/smooth_M.png", p.M, width=8, height=4)
+
+p.A <- ggplot(out.GS_global, aes(ElapsedDays, amplitude, colour=Species, fill=Species)) +
+  geom_ribbon(aes(ymin=amplitude_lo, ymax=amplitude_hi), alpha=0.25, colour=NA) +
+  geom_line(aes(size=Spline)) +
+  geom_line(data=out.GS_tank, aes(group=paste(Species, Tank)), size=0.3) +
+  geom_rect(data=lower_ZT.df, fill="white", colour="grey30", size=0.1,
+            aes(ymin=amp_1, ymax=amp_2, xmin=light_1, xmax=light_2)) +
+  geom_rect(data=lower_ZT.df, fill="grey30", colour="grey30", size=0.1,
+            aes(ymin=amp_1, ymax=amp_2, xmin=dark_1, xmax=dark_2)) +
+  scale_x_continuous("Elapsed time (days)", breaks=0:13, limits=c(0,13)) + 
+  scale_y_continuous("Amplitude", breaks=c(0, 0.5, 1), limits=c(0, 1.5)) + 
+  scale_colour_manual(values=sp_col) +
+  scale_fill_manual(values=sp_col) +
+  scale_size_manual(values=c(1, 0.3), drop=F)
+ggsave("figs/pub/smooth_A.png", p.A, width=8, height=4)
+
+p.phi <- ggplot(out.GS_global, aes(ElapsedDays, acrophase, colour=Species, fill=Species)) +
+  geom_rect(aes(xmin=-0.25, xmax=-0.125, ymax=12, ymin=24), 
+            colour="grey30", fill="grey30", size=0.25) +
+  geom_rect(aes(xmin=-0.25, xmax=-0.125, ymax=0, ymin=12), 
+            colour="grey30", fill="white", size=0.25) +
+  geom_ribbon(aes(ymin=acrophase_lo, ymax=acrophase_hi), alpha=0.25, colour=NA) +
+  geom_line(aes(size=Spline)) +
+  geom_line(data=out.GS_tank, aes(group=paste(Species, Tank)), size=0.3) +
+  geom_rect(data=lower_ZT.df, fill="white", colour="grey30", size=0.1,
+            aes(ymin=acro_1, ymax=acro_2, xmin=light_1, xmax=light_2)) +
+  geom_rect(data=lower_ZT.df, fill="grey30", colour="grey30", size=0.1,
+            aes(ymin=acro_1, ymax=acro_2, xmin=dark_1, xmax=dark_2)) +
+  scale_x_continuous("Elapsed time (days)", breaks=0:13, limits=c(-0.25,13)) + 
+  scale_y_continuous("Acrophase (ZT h)", breaks=c(0, 6, 12, 18, 24), limits=c(0,24)) + 
+  scale_colour_manual(values=sp_col) +
+  scale_fill_manual(values=sp_col) +
+  scale_size_manual(values=c(1, 0.3), drop=F)
+ggsave("figs/pub/smooth_phi.png", p.phi, width=8, height=4)
+
+ggpubr::ggarrange(p.Temp, p.M, p.A, p.phi, ncol=2, nrow=2, common.legend=T, 
+                  labels="auto")
+ggsave("figs/pub/smooth_all_new.png", width=10, height=6, dpi=300)
+
+
+p.Temp2 <- ggplot(out.GS_global, aes(ElapsedDays, pred, colour=Species, fill=Species)) +
+  geom_point(data=map_dfr(data.df, ~filter(.x, Group!="Control"), .id="Species"), 
+             aes(y=prefTemp, shape=Tank), alpha=0.25) +
+  geom_ribbon(aes(ymin=pred_lo, ymax=pred_hi), alpha=0.2, colour=NA) +
+  geom_line(aes(size=Spline)) +
+  geom_line(data=out.GS_tank, aes(group=paste(Species, Tank), linetype=Tank), size=0.3) +
+  scale_x_continuous("Elapsed time (days)", breaks=0:13, limits=c(0,13)) + 
+  scale_colour_manual(values=sp_col) +
+  scale_fill_manual(values=sp_col) +
+  scale_size_manual(values=c(1, 0.5), drop=F) + 
+  scale_shape_manual(values=1:3) +
+  guides(shape=guide_legend(override.aes=list(alpha=1)),
+         colour=guide_legend(order=1),
+         fill=guide_legend(order=1),
+         size=guide_legend(order=2)) +
+  geom_rug(data=tibble(ElapsedDays=0, 
+                       pred=unlist(temp_rng), 
+                       Species=rep(names(sp_col), each=2)), sides="l", size=1) +
+  geom_rect(data=lower_ZT.df, fill="white", colour="grey30", size=0.1,
+            aes(ymin=temp_1, ymax=temp_2, xmin=light_1, xmax=light_2)) +
+  geom_rect(data=lower_ZT.df, fill="grey30", colour="grey30", size=0.1,
+            aes(ymin=temp_1, ymax=temp_2, xmin=dark_1, xmax=dark_2)) +
+  ylab("Preferred temperature (ºC)")
+ggsave("figs/pub/ALT_smooth_prefTemp.png", p.Temp2, width=8, height=6, dpi=300)
+
+ggpubr::ggarrange(p.M, p.A, p.phi, ncol=1, nrow=3, 
+                  common.legend=T, legend="bottom", labels="auto")
+ggsave("figs/pub/ALT_smooth_cosinor_params.png", width=5, height=10, dpi=300)
+
+
+out.GS_global %>% filter(ElapsedDays %in% c(0,3)) %>% 
+  select(Species, ElapsedDays, starts_with("M"))
+out.GS_global %>% filter(ElapsedDays %in% c(0,3)) %>% 
+  select(Species, ElapsedDays, starts_with("A"))
+out.GS_global %>% filter(ElapsedDays %in% c(0,3)) %>% 
+  select(Species, ElapsedDays, starts_with("phi"))
+
