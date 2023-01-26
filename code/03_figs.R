@@ -19,6 +19,7 @@ cmr.ls <- readRDS("figs/cmr_cmaps.RDS")
 sp_col <- c("Nile tilapia"="#1a3431", "Zebrafish"="#6283c8")
 species <- c("Nile tilapia"="Tilapia", "Zebrafish"="ZF")
 temp_rng <- list(Tilapia=c(25.5, 34.5), ZF=c(24, 31.5))
+temp_ctrl <- c(Tilapia=30.1, ZF=26.4)
 
 data.df <- map(species, 
                ~readxl::read_xlsx(dir("data", glue("{.x}_.*RawData2"), full.names=T),
@@ -796,6 +797,8 @@ p.Temp <- ggplot(out.GS_global, aes(ElapsedDays, pred, colour=Species, fill=Spec
 ggsave("figs/pub/smooth_prefTemp.png", p.Temp, width=8, height=4, dpi=300)
 
 p.M <- ggplot(out.GS_global, aes(ElapsedDays, M, colour=Species, fill=Species)) +
+  geom_hline(yintercept=temp_ctrl[1], colour=sp_col[1], linetype=5, size=0.1) +
+  geom_hline(yintercept=temp_ctrl[2], colour=sp_col[2], linetype=5, size=0.1) +
   geom_ribbon(aes(ymin=M_lo, ymax=M_hi), alpha=0.25, colour=NA) +
   geom_line(aes(size=Spline)) +
   geom_line(data=out.GS_tank, aes(group=paste(Species, Tank)), size=0.3) +
@@ -853,6 +856,8 @@ ggsave("figs/pub/smooth_all_new.png", width=10, height=6, dpi=300)
 
 
 p.Temp2 <- ggplot(out.GS_global, aes(ElapsedDays, pred, colour=Species, fill=Species)) +
+  geom_hline(yintercept=temp_ctrl[1], colour=sp_col[1], linetype=5, size=0.1) +
+  geom_hline(yintercept=temp_ctrl[2], colour=sp_col[2], linetype=5, size=0.1) +
   geom_point(data=map_dfr(data.df, ~filter(.x, Group!="Control"), .id="Species"), 
              aes(y=prefTemp, shape=Tank), alpha=0.25) +
   geom_ribbon(aes(ymin=pred_lo, ymax=pred_hi), alpha=0.2, colour=NA) +
