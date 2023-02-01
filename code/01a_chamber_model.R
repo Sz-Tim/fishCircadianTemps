@@ -240,71 +240,98 @@ out_GS4.ctrl <- brm(bf(Y ~ Ch) +
 
 
 
-# 
-# 
-# 
-# pred_mu.dat <- expand_grid(Days=1:13, ZT=0:24) %>%
-#   mutate(ElapsedTime=ZT+24*(Days-1),
-#          ElapsedTime_sc=(ElapsedTime-attr(time_sc, "scaled:center"))/attr(time_sc, "scaled:scale"),
-#          ElapsedDays=ElapsedTime/24) 
-# 
-# post_pred <- posterior_epred(out_GS3, newdata=pred_mu.dat)
-# post_mn <- apply(post_pred, 2:3, mean)
-# post_hdi <- apply(post_pred, 2:3, HDInterval::hdi)
-# 
-# post_M <- map(2:5, ~(posterior_smooths(out_GS3, newdata=pred_mu.dat, 
-#                                        smooth="s(ElapsedTime_sc)", nlpar=paste0("M", .x)) +
-#                        c(as_draws_matrix(out_GS3, variable=paste0("b_M", .x, "_Intercept")))))
-# post_M.ar <- array(0, dim=dim(post_pred))
-# post_M.ar[,,2] <- exp(post_M[[1]])
-# post_M.ar[,,3] <- exp(post_M[[2]])
-# post_M.ar[,,4] <- exp(post_M[[3]])
-# post_M.ar[,,5] <- exp(post_M[[4]])
-# 
-# for(i in 1:dim(post_M.ar)[1]) {
-#   for(j in 1:dim(post_M.ar)[2]) {
-#     post_M.ar[i,j,] <- post_M.ar[i,j,]/sum(post_M.ar[i,j,])
-#   }
-# }
-# post_M_mn <- apply(post_M.ar, 2:3, mean)
-# post_M_hdi <- apply(post_M.ar, 2:3, HDInterval::hdi)
-# 
-# fit.df <- tibble(Chamber=factor(rep(1:5, each=nrow(pred_mu.dat))),
-#                  ElapsedDays=rep(pred_mu.dat$ElapsedDays, 5)) %>%
-#   mutate(pr_mn=c(post_mn),
-#          pr_lo=c(post_hdi[1,,]),
-#          pr_hi=c(post_hdi[2,,]),
-#          M_mn=c(post_M_mn),
-#          M_lo=c(post_M_hdi[1,,]),
-#          M_hi=c(post_M_hdi[2,,]))
-# 
-# 
-# 
-# ggplot(fit.df, aes(ElapsedDays, pr_mn, ymin=pr_lo, ymax=pr_hi, 
-#                    group=Chamber, colour=Chamber, fill=Chamber)) +
-#   geom_ribbon(alpha=0.5, colour=NA) + geom_line() +
-#   scale_colour_manual(values=chmb_col) +
-#   scale_fill_manual(values=chmb_col) +
-#   scale_x_continuous("Elapsed time (days)", breaks=0:13) +
-#   scale_y_continuous("Predicted proportion of fish", limits=c(0, 0.5)) +
-#   ggtitle(species) +
-#   theme_classic()
-# 
-# ggplot(fit.df, aes(ElapsedDays, pr_mn, fill=Chamber, group=paste(ElapsedDays, Chamber))) +
-#   geom_bar(stat="identity", position="fill", colour=NA) +
-#   scale_fill_manual(values=chmb_col) +
-#   scale_x_continuous("Elapsed time (days)", breaks=0:13) +
-#   scale_y_continuous("Predicted proportion of fish", limits=c(0, 1)) +
-#   ggtitle(species) +
-#   theme_classic()
-# 
-# 
-# ggplot(fit.df, aes(ElapsedDays, M_mn, ymin=M_lo, ymax=M_hi, 
-#                    group=Chamber, colour=Chamber, fill=Chamber)) +
-#   geom_ribbon(alpha=0.5, colour=NA) + geom_line() +
-#   scale_colour_manual(values=chmb_col) +
-#   scale_fill_manual(values=chmb_col) +
-#   scale_x_continuous("Elapsed time (days)", breaks=0:13) +
-#   # scale_y_continuous("Predicted proportion of fish", limits=c(0, NA)) +
-#   ggtitle(species) +
-#   theme_classic()
+fit.df <- rbind(
+  summarise_N_posteriors(out_GS4, 
+                         expand_grid(Days=1:13, ZT=0:23, Tank=3) %>%
+                           mutate(ElapsedTime=ZT+24*(Days-1),
+                                  ElapsedTime_sc=(ElapsedTime-attr(time_sc, "scaled:center"))/attr(time_sc, "scaled:scale"),
+                                  ElapsedDays=ElapsedTime/24,
+                                  Species=species,
+                                  Group="Experimental")),
+  summarise_N_posteriors(out_GS4.ctrl, 
+                         expand_grid(Days=1:6, ZT=0:23, Tank=3) %>%
+                           mutate(ElapsedTime=ZT+24*(Days-1),
+                                  ElapsedTime_sc=(ElapsedTime-attr(time_sc, "scaled:center"))/attr(time_sc, "scaled:scale"),
+                                  ElapsedDays=ElapsedTime/24,
+                                  Species=species,
+                                  Group="Control"))
+)
+
+write_csv(fit.df, glue("out/GS_predGlobal_NChmbr_{species}.csv"))
+
+
+ggplot(fit.df, aes(ElapsedDays, pr_mn, ymin=pr_lo, ymax=pr_hi,
+                   group=Chamber, colour=Chamber, fill=Chamber)) +
+  geom_ribbon(alpha=0.5, colour=NA) + geom_line() +
+  scale_colour_manual(values=chmb_col) +
+  scale_fill_manual(values=chmb_col) +
+  scale_x_continuous("Elapsed time (days)", breaks=0:13) +
+  scale_y_continuous("Predicted proportion of fish", limits=c(0, NA)) +
+  ggtitle(species) +
+  theme_classic() + 
+  facet_grid(Group~.)
+
+ggplot(fit.df, aes(ElapsedDays, pr_mn, ymin=pr_lo, ymax=pr_hi,
+                   group=Group, colour=Group, fill=Group)) +
+  geom_ribbon(alpha=0.5, colour=NA) + geom_line() +
+  scale_x_continuous("Elapsed time (days)", breaks=0:13) +
+  scale_y_continuous("Predicted proportion of fish", limits=c(0, NA)) +
+  ggtitle(species) +
+  theme_classic() + 
+  facet_grid(Chamber~.)
+
+ggplot(fit.df, aes(ElapsedDays, pr_mn, fill=Chamber)) +
+  geom_area(colour="grey30") +
+  scale_fill_manual(values=chmb_col) +
+  scale_x_continuous("Elapsed time (days)", breaks=0:13) +
+  scale_y_continuous("Predicted proportion of fish", limits=c(0, 1)) +
+  ggtitle(species) +
+  theme_classic() + 
+  facet_grid(Group~.)
+
+ggplot(fit.df, aes(ElapsedDays, M_mn, ymin=M_lo, ymax=M_hi,
+                   group=Chamber, colour=Chamber, fill=Chamber)) +
+  geom_ribbon(alpha=0.5, colour=NA) + geom_line() +
+  scale_colour_manual(values=chmb_col) +
+  scale_fill_manual(values=chmb_col) +
+  scale_x_continuous("Elapsed time (days)", breaks=0:13) +
+  # scale_y_continuous("Predicted proportion of fish", limits=c(0, NA)) +
+  ggtitle(species) +
+  theme_classic() +
+  facet_grid(Group~.)
+
+ggplot(fit.df, aes(ElapsedDays, M_mn, ymin=M_lo, ymax=M_hi,
+                   group=Group, colour=Group, fill=Group)) +
+  geom_ribbon(alpha=0.5, colour=NA) + geom_line() +
+  scale_x_continuous("Elapsed time (days)", breaks=0:13) +
+  # scale_y_continuous("Predicted proportion of fish", limits=c(0, NA)) +
+  ggtitle(species) +
+  theme_classic() +
+  facet_grid(Chamber~.)
+
+ggplot(fit.df, aes(ElapsedDays, M_mn, fill=Chamber)) +
+  geom_area(colour="black") +
+  scale_fill_manual(values=chmb_col) +
+  scale_x_continuous("Elapsed time (days)", breaks=0:13) +
+  scale_y_continuous("Predicted proportion of fish (MESOR)", limits=c(0, 1)) +
+  ggtitle(species) +
+  theme_classic() +
+  facet_grid(Group~.)
+
+ggplot(fit.df, aes(ElapsedDays, A_mn, ymin=A_lo, ymax=A_hi,
+                   group=Group, colour=Group, fill=Group)) +
+  geom_ribbon(alpha=0.5, colour=NA) + geom_line() +
+  scale_x_continuous("Elapsed time (days)", breaks=0:13) +
+  # scale_y_continuous("Predicted proportion of fish", limits=c(0, NA)) +
+  ggtitle(species) +
+  theme_classic() +
+  facet_grid(Chamber~.)
+
+ggplot(fit.df, aes(ElapsedDays, phi_mn, ymin=phi_lo, ymax=phi_hi,
+                   group=Group, colour=Group, fill=Group)) +
+  geom_ribbon(alpha=0.5, colour=NA) + geom_line() +
+  scale_x_continuous("Elapsed time (days)", breaks=0:13) +
+  # scale_y_continuous("Predicted proportion of fish", limits=c(0, NA)) +
+  ggtitle(species) +
+  theme_classic() +
+  facet_grid(Chamber~.)
