@@ -9,8 +9,8 @@
 # switches ----------------------------------------------------------------
 
 species <- c("ZF", "Tilapia")[1]
-iter <- 2000
-warmup <- 1000
+iter <- 4000
+warmup <- 2000
 chains <- 4
 stan_args <- list(adapt_delta=0.95, max_treedepth=20)
 
