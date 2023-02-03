@@ -8,7 +8,7 @@
 
 # switches ----------------------------------------------------------------
 
-species <- c("ZF", "Tilapia")[1]
+species <- c("ZF", "Tilapia")[2]
 iter <- 4000
 warmup <- 2000
 chains <- 4
@@ -52,8 +52,23 @@ data.noNA %>%
   mutate(propFish=FishCount/sum(FishCount)) %>%
   ungroup %>%
   select(Group, Tank, ElapsedTime, ZT, Chamber, propFish) %>%
+  filter(ElapsedTime < (24*6)) %>%
   ggplot(aes(ElapsedTime/24, propFish, fill=Chamber)) + 
-  geom_bar(stat="identity", colour=NA) +
+  geom_bar(stat="identity", colour="grey30") +
+  scale_fill_manual(values=chmb_col) +
+  scale_x_continuous("Elapsed time (days)", breaks=0:13) +
+  facet_grid(Tank~Group) +
+  theme_bw()
+
+data.noNA %>%
+  mutate(Group=if_else(Group=="Control", "Control", "Experiment")) %>%
+  group_by(Group, Tank, ElapsedTime) %>%
+  mutate(propFish=FishCount/sum(FishCount)) %>%
+  ungroup %>%
+  select(Group, Tank, ElapsedTime, ZT, Chamber, propFish) %>%
+  filter(ElapsedTime < (24*6)) %>%
+  ggplot(aes(ElapsedTime/24, propFish, fill=Chamber)) + 
+  geom_area() +
   scale_fill_manual(values=chmb_col) +
   scale_x_continuous("Elapsed time (days)", breaks=0:13) +
   facet_grid(Tank~Group) +

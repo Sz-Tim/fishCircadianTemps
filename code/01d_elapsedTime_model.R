@@ -28,8 +28,8 @@ data.df <- readxl::read_xlsx(dir("data", glue("{species}_.*RawData2"), full.name
                              1, col_types=c(rep("numeric", 6), "skip", "skip")) %>%
   mutate(ln_FishCount=log(FishCount+1),
          Chamber=factor(Chamber),
-         Group=factor(Group, 
-                      levels=c(3, 1, 2), 
+         Group=factor(Group,
+                      levels=c(3, 1, 2),
                       labels=c("Control", "Acclimation", "Experiment")),
          Tank=factor(Tank)) %>%
   left_join(read_csv(glue("data/temp_{species}.csv")) %>%
@@ -49,7 +49,7 @@ data.df <- data.df %>%
 
 # model prep --------------------------------------------------------------
 
-data.noNA <- data.df %>% filter(complete.cases(.)) %>% 
+data.noNA <- data.df %>% filter(complete.cases(.)) %>%
   mutate(Days=factor(Days),
          Tank=factor(Tank),
          ElapsedDays=ElapsedTime/24)
@@ -101,7 +101,7 @@ if(species=="ZF") {
 #                 A ~ s(ElapsedTime_sc) + (1|Tank),
 #                 phi ~ s(ElapsedTime_sc) + (1|Tank),
 #                 nl=TRUE),
-#              prior=prior.nl, 
+#              prior=prior.nl,
 #              control=stan_args, iter=iter, warmup=warmup, init=0,
 #              data=data.noNA, cores=chains, chains=chains, refresh=100,
 #              save_model=glue("models/cosinor/s_G_{species}.stan"),
@@ -112,14 +112,14 @@ out_GS <- brm(bf(prefTemp ~ M + exp(A) * cos(3.141593*(ZT)/12 + phi),
                  A ~ s(ElapsedTime_sc, m=2) + s(ElapsedTime_sc, Tank, bs="fs", m=1),
                  phi ~ s(ElapsedTime_sc, m=2) + s(ElapsedTime_sc, Tank, bs="fs", m=1),
                  nl=TRUE),
-              prior=prior.nl, 
+              prior=prior.nl,
               control=stan_args, iter=iter, warmup=warmup, init=0,
               data=data.noNA, cores=chains, chains=chains, refresh=100,
               save_model=glue("models/cosinor/prefTemp_GS_{species}.stan"),
               file=glue("models/cosinor/prefTemp_GS_{species}"))
 
 
-pred_mu.dat <- expand_grid(Days=1:13, ZT=0:24) %>%
+pred_mu.dat <- expand_grid(Days=1:13, ZT=0:23) %>%
   mutate(ElapsedTime=ZT+24*(Days-1),
          ElapsedTime_sc=(ElapsedTime-attr(time_sc, "scaled:center"))/attr(time_sc, "scaled:scale"),
          ElapsedDays=ElapsedTime/24) 
@@ -155,31 +155,35 @@ pred_mu.df <- pred_mu.dat %>%
 
 
 
-pred.dat <- expand_grid(ZT=0:24, Days=1:13, Tank=1:3) %>%
+pred.tank <- expand_grid(ZT=0:23, Days=1:13, Tank=1:3) %>%
   mutate(ElapsedTime=ZT+24*(Days-1),
          ElapsedTime_sc=(ElapsedTime-attr(time_sc, "scaled:center"))/attr(time_sc, "scaled:scale"),
          ElapsedDays=ElapsedTime/24) 
 pred.ls  <- list(
-  prefTemp=posterior_epred(out_GS, newdata=pred.dat, re_formula=NULL),
-  M=posterior_epred(out_GS, newdata=pred.dat, re_formula=NULL, nlpar="M"),
-  A=posterior_epred(out_GS, newdata=pred.dat, re_formula=NULL, nlpar="A"),
-  phi=posterior_epred(out_GS, newdata=pred.dat, re_formula=NULL, nlpar="phi")
+  prefTemp=posterior_epred(out_GS, newdata=pred.tank, re_formula=NULL),
+  M=posterior_epred(out_GS, newdata=pred.tank, re_formula=NULL, nlpar="M"),
+  A=posterior_epred(out_GS, newdata=pred.tank, re_formula=NULL, nlpar="A"),
+  phi=posterior_epred(out_GS, newdata=pred.tank, re_formula=NULL, nlpar="phi")
 )
-pred.ls$A <- exp(pred.ls$A)
-pred.ls$phi <- phi_to_ZT(pred.ls$phi)
-pred.df <- pred.dat %>%
+pred.ls$amplitude <- exp(pred.ls$A)
+pred.ls$acrophase <- phi_to_ZT(pred.ls$phi)
+hdis.tank <- list(prefTemp=HDInterval::hdi(pred.ls$prefTemp),
+                  M=HDInterval::hdi(pred.ls$M),
+                  amplitude=HDInterval::hdi(pred.ls$amplitude),
+                  acrophase=HDInterval::hdi(pred.ls$acrophase))
+pred.df <- pred.tank %>%
   mutate(pred=colMeans(pred.ls$prefTemp),
-         pred_lo=apply(pred.ls$prefTemp, 2, function(x) quantile(x, probs=0.025)),
-         pred_hi=apply(pred.ls$prefTemp, 2, function(x) quantile(x, probs=0.975)),
+         pred_lo=hdis.tank$prefTemp[1,],
+         pred_hi=hdis.tank$prefTemp[2,],
          M=colMeans(pred.ls$M),
-         M_lo=apply(pred.ls$M, 2, function(x) quantile(x, probs=0.025)),
-         M_hi=apply(pred.ls$M, 2, function(x) quantile(x, probs=0.975)),
-         amplitude=colMeans(pred.ls$A),
-         amplitude_lo=apply(pred.ls$A, 2, function(x) quantile(x, probs=0.025)),
-         amplitude_hi=apply(pred.ls$A, 2, function(x) quantile(x, probs=0.975)),
-         acrophase=colMeans(pred.ls$phi),
-         acrophase_lo=apply(pred.ls$phi, 2, function(x) quantile(x, probs=0.025)),
-         acrophase_hi=apply(pred.ls$phi, 2, function(x) quantile(x, probs=0.975))) %>%
+         M_lo=hdis.tank$M[1,],
+         M_hi=hdis.tank$M[2,],
+         amplitude=colMeans(pred.ls$amplitude),
+         amplitude_lo=hdis.tank$amplitude[1,],
+         amplitude_hi=hdis.tank$amplitude[2,],
+         acrophase=colMeans(pred.ls$acrophase),
+         acrophase_lo=hdis.tank$acrophase[1,],
+         acrophase_hi=hdis.tank$acrophase[2,]) %>%
   mutate(Tank=factor(Tank))
 
 pred.df %>% 
