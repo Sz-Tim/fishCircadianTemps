@@ -52,12 +52,12 @@ data.noNA %>%
   mutate(propFish=FishCount/sum(FishCount)) %>%
   ungroup %>%
   select(Group, Tank, ElapsedTime, ZT, Chamber, propFish) %>%
-  filter(ElapsedTime < (24*6)) %>%
+  # filter(ElapsedTime < (24*6)) %>%
   ggplot(aes(ElapsedTime/24, propFish, fill=Chamber)) + 
   geom_bar(stat="identity", colour="grey30") +
   scale_fill_manual(values=chmb_col) +
   scale_x_continuous("Elapsed time (days)", breaks=0:13) +
-  facet_grid(Tank~Group) +
+  facet_grid(Tank~Group, scales="free_x", space="free_x") +
   theme_bw()
 
 data.noNA %>%
@@ -66,12 +66,12 @@ data.noNA %>%
   mutate(propFish=FishCount/sum(FishCount)) %>%
   ungroup %>%
   select(Group, Tank, ElapsedTime, ZT, Chamber, propFish) %>%
-  filter(ElapsedTime < (24*6)) %>%
+  # filter(ElapsedTime < (24*6)) %>%
   ggplot(aes(ElapsedTime/24, propFish, fill=Chamber)) + 
   geom_area() +
   scale_fill_manual(values=chmb_col) +
   scale_x_continuous("Elapsed time (days)", breaks=0:13) +
-  facet_grid(Tank~Group) +
+  facet_grid(Tank~Group, scales="free_x", space="free_x") +
   theme_bw()
 
 
@@ -255,24 +255,135 @@ out_GS4.ctrl <- brm(bf(Y ~ Ch) +
 
 
 
-fit.df <- rbind(
-  summarise_N_posteriors(out_GS4, 
-                         expand_grid(Days=1:13, ZT=0:23, Tank=3) %>%
-                           mutate(ElapsedTime=ZT+24*(Days-1),
-                                  ElapsedTime_sc=(ElapsedTime-attr(time_sc, "scaled:center"))/attr(time_sc, "scaled:scale"),
-                                  ElapsedDays=ElapsedTime/24,
-                                  Species=species,
-                                  Group="Experimental")),
-  summarise_N_posteriors(out_GS4.ctrl, 
-                         expand_grid(Days=1:6, ZT=0:23, Tank=3) %>%
-                           mutate(ElapsedTime=ZT+24*(Days-1),
-                                  ElapsedTime_sc=(ElapsedTime-attr(time_sc, "scaled:center"))/attr(time_sc, "scaled:scale"),
-                                  ElapsedDays=ElapsedTime/24,
-                                  Species=species,
-                                  Group="Control"))
+fit.ls <- list(
+  exp=summarise_N_posteriors(out_GS4, 
+                             expand_grid(Days=1:13, ZT=0:23, Tank=3) %>%
+                               mutate(ElapsedTime=ZT+24*(Days-1),
+                                      ElapsedTime_sc=(ElapsedTime-attr(time_sc, "scaled:center"))/attr(time_sc, "scaled:scale"),
+                                      ElapsedDays=ElapsedTime/24,
+                                      Species=species,
+                                      Group="Experimental")),
+  ctrl=summarise_N_posteriors(out_GS4.ctrl, 
+                              expand_grid(Days=1:6, ZT=0:23, Tank=3) %>%
+                                mutate(ElapsedTime=ZT+24*(Days-1),
+                                       ElapsedTime_sc=(ElapsedTime-attr(time_sc, "scaled:center"))/attr(time_sc, "scaled:scale"),
+                                       ElapsedDays=ElapsedTime/24,
+                                       Species=species,
+                                       Group="Control"))
 )
+fit.df <- rbind(fit.ls$exp$summaries,
+                fit.ls$ctrl$summaries)
+pr.post <- list(exp=fit.ls$exp$pr.post,
+                ctrl=fit.ls$ctrl$pr.post)
+M.post <- list(exp=fit.ls$exp$M.post,
+               ctrl=fit.ls$ctrl$M.post)
+rm(fit.ls)
 
 write_csv(fit.df, glue("out/GS_predGlobal_NChmbr_{species}.csv"))
+
+
+
+fit.dat <- bind_rows(
+  expand_grid(Days=1:13, ZT=0:23, Tank=3) %>%
+    mutate(ElapsedTime=ZT+24*(Days-1),
+           ElapsedTime_sc=(ElapsedTime-attr(time_sc, "scaled:center"))/attr(time_sc, "scaled:scale"),
+           ElapsedDays=ElapsedTime/24,
+           Species=species,
+           Group="Experimental"),
+  expand_grid(Days=1:6, ZT=0:23, Tank=3) %>%
+    mutate(ElapsedTime=ZT+24*(Days-1),
+           ElapsedTime_sc=(ElapsedTime-attr(time_sc, "scaled:center"))/attr(time_sc, "scaled:scale"),
+           ElapsedDays=ElapsedTime/24,
+           Species=species,
+           Group="Control"))
+
+pr.edge <- array(dim=c(dim(pr.post$exp)[1], 
+                       dim(pr.post$exp)[2]+dim(pr.post$ctrl)[2],
+                       2))
+pr.edge[,,1] <- cbind(apply(pr.post$exp[,,c(1,5)], 1:2, sum), 
+                      apply(pr.post$ctrl[,,c(1,5)], 1:2, sum))
+pr.edge[,,2] <- cbind(apply(pr.post$exp[,,2:4], 1:2, sum), 
+                      apply(pr.post$ctrl[,,2:4], 1:2, sum))
+
+M.edge <- array(dim=c(dim(M.post$exp)[1], 
+                      dim(M.post$exp)[2]+dim(M.post$ctrl)[2],
+                      2))
+M.edge[,,1] <- cbind(apply(M.post$exp[,,c(1,5)], 1:2, sum), 
+                     apply(M.post$ctrl[,,c(1,5)], 1:2, sum))
+M.edge[,,2] <- cbind(apply(M.post$exp[,,2:4], 1:2, sum), 
+                     apply(M.post$ctrl[,,2:4], 1:2, sum))
+edge.df <- fit.dat %>%
+  mutate(edge_mn=colMeans(pr.edge[,,1]),
+         edge_lo=HDInterval::hdi(pr.edge[,,1])[1,],
+         edge_hi=HDInterval::hdi(pr.edge[,,1])[2,],
+         M_mn=colMeans(M.edge[,,1]),
+         M_lo=HDInterval::hdi(M.edge[,,1])[1,],
+         M_hi=HDInterval::hdi(M.edge[,,1])[2,])
+write_csv(edge.df, glue("out/GS_predEdge_NChmbr_{species}.csv"))
+
+
+pr.cw <- array(dim=c(dim(pr.post$exp)[1], 
+                     dim(pr.post$exp)[2]+dim(pr.post$ctrl)[2],
+                     2))
+pr.cw[,,1] <- cbind(apply(pr.post$exp[,,1:2], 1:2, sum), 
+                    apply(pr.post$ctrl[,,1:2], 1:2, sum))
+pr.cw[,,2] <- cbind(apply(pr.post$exp[,,4:5], 1:2, sum), 
+                    apply(pr.post$ctrl[,,4:5], 1:2, sum))
+M.cw <- array(dim=c(dim(M.post$exp)[1], 
+                     dim(M.post$exp)[2]+dim(M.post$ctrl)[2],
+                     2))
+M.cw[,,1] <- cbind(apply(M.post$exp[,,1:2], 1:2, sum), 
+                    apply(M.post$ctrl[,,1:2], 1:2, sum))
+M.cw[,,2] <- cbind(apply(M.post$exp[,,4:5], 1:2, sum), 
+                    apply(M.post$ctrl[,,4:5], 1:2, sum))
+cw.df <-  bind_rows(
+  fit.dat %>%
+    mutate(Chambers="cold",
+           pr_mn=colMeans(pr.cw[,,1]),
+           pr_lo=HDInterval::hdi(pr.cw[,,1])[1,],
+           pr_hi=HDInterval::hdi(pr.cw[,,1])[2,],
+           M_mn=colMeans(M.cw[,,1]),
+           M_lo=HDInterval::hdi(M.cw[,,1])[1,],
+           M_hi=HDInterval::hdi(M.cw[,,1])[2,]),
+  fit.dat %>%
+    mutate(Chambers="warm",
+           pr_mn=colMeans(pr.cw[,,2]),
+           pr_lo=HDInterval::hdi(pr.cw[,,2])[1,],
+           pr_hi=HDInterval::hdi(pr.cw[,,2])[2,],
+           M_mn=colMeans(M.cw[,,2]),
+           M_lo=HDInterval::hdi(M.cw[,,2])[1,],
+           M_hi=HDInterval::hdi(M.cw[,,2])[2,]))
+write_csv(cw.df, glue("out/GS_predColdWarm_NChmbr_{species}.csv"))
+
+
+
+
+ggplot(edge.df, aes(ElapsedDays, edge_mn, ymin=edge_lo, ymax=edge_hi, colour=Group, fill=Group)) + 
+  geom_hline(yintercept=0.4, colour="grey") +
+  geom_line() + geom_ribbon(colour=NA, alpha=0.5) + 
+  scale_y_continuous("Pr(edge chamber)", limits=c(0,1)) +
+  scale_x_continuous("Elapsed time (days)", breaks=seq(0,13,by=2))
+ggplot(edge.df, aes(ElapsedDays, M_mn, ymin=M_lo, ymax=M_hi, colour=Group, fill=Group)) + 
+  geom_hline(yintercept=0.4, colour="grey") +
+  geom_line() + geom_ribbon(colour=NA, alpha=0.5) + 
+  scale_y_continuous("M: Pr(edge chamber)", limits=c(0,1)) +
+  scale_x_continuous("Elapsed time (days)", breaks=seq(0,13,by=2))
+
+
+ggplot(cw.df, aes(ElapsedDays, pr_mn, ymin=pr_lo, ymax=pr_hi, colour=Group, fill=Group)) + 
+  geom_hline(yintercept=0.4, colour="grey") +
+  geom_line() + geom_ribbon(colour=NA, alpha=0.5) + 
+  scale_y_continuous("Pr(cold chamber)", limits=c(0,1)) +
+  scale_x_continuous("Elapsed time (days)", breaks=seq(0,13,by=2)) +
+  facet_grid(.~Chambers)
+ggplot(cw.df, aes(ElapsedDays, M_mn, ymin=M_lo, ymax=M_hi, colour=Group, fill=Group)) + 
+  geom_hline(yintercept=0.4, colour="grey") +
+  geom_line() + geom_ribbon(colour=NA, alpha=0.5) + 
+  scale_y_continuous("Pr(cold chamber)", limits=c(0,1)) +
+  scale_x_continuous("Elapsed time (days)", breaks=seq(0,13,by=2)) +
+  facet_grid(.~Chambers)
+
+
 
 
 ggplot(fit.df, aes(ElapsedDays, pr_mn, ymin=pr_lo, ymax=pr_hi,

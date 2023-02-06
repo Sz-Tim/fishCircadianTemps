@@ -78,6 +78,14 @@ fit.N <- map_dfr(species, ~read_csv(glue("out/GS_predGlobal_NChmbr_{.x}.csv"))) 
   mutate(Chamber=factor(Chamber),
          Group=factor(Group, levels=c("Control", "Experimental"), labels=c("Control CTE", "Experiment")),
          SpeciesFull=factor(Species, levels=species, labels=names(species)))
+fit.edge <- map_dfr(species, ~read_csv(glue("out/GS_predEdge_NChmbr_{.x}.csv"))) %>%
+  mutate(Group=factor(Group, levels=c("Control", "Experimental"), labels=c("Control CTE", "Experiment")),
+         SpeciesFull=factor(Species, levels=species, labels=names(species))) %>%
+  rename(pr_mn=edge_mn, pr_lo=edge_lo, pr_hi=edge_hi)
+fit.cw <- map_dfr(species, ~read_csv(glue("out/GS_predColdWarm_NChmbr_{.x}.csv"))) %>%
+  mutate(Chambers=factor(Chambers),
+         Group=factor(Group, levels=c("Control", "Experimental"), labels=c("Control CTE", "Experiment")),
+         SpeciesFull=factor(Species, levels=species, labels=names(species)))
 fit.temp_global <- map_dfr(species, ~read_csv(glue("out/GS_predGlobal_{.x}.csv"))) %>%
   mutate(Spline=factor("Global", levels=c("Global", "Tank")))
 fit.temp_tank <- map_dfr(species, ~read_csv(glue("out/GS_predTank_{.x}.csv"))) %>%
@@ -124,6 +132,110 @@ p.N_prMnCI <- fit.N %>%
   theme(panel.border=element_rect(fill=NA),
         legend.position="bottom")
 ggsave("figs/pub/1_revision1/propFishByChamber_means+CIs.png", p.N_prMnCI, width=9, height=4, dpi=300)
+
+
+p.Edge_prMnCI <- fit.edge %>%
+  mutate(Chamber="Edge chambers") %>%
+  ggplot(aes(ElapsedDays, pr_mn, ymin=pr_lo, ymax=pr_hi,
+             group=Group, colour=Group, fill=Group)) +
+  geom_hline(yintercept=c(0,1), colour="grey50", size=0.25) +
+  geom_hline(yintercept=c(0.4), colour="grey50", size=0.25) +
+  geom_rect(data=lower_ZT.Grp, fill="white", colour="grey30", size=0.1,
+            aes(ymin=prop_1, ymax=prop_2, xmin=light_1, xmax=light_2)) +
+  geom_rect(data=lower_ZT.Grp, fill="grey30", colour="grey30", size=0.1,
+            aes(ymin=prop_1, ymax=prop_2, xmin=dark_1, xmax=dark_2)) +
+  geom_ribbon(alpha=0.5, colour=NA) + geom_line() +
+  scale_colour_manual(values=group_col) +
+  scale_fill_manual(values=group_col) +
+  scale_x_continuous("Elapsed time (days)", breaks=seq(0,13,by=2)) +
+  scale_y_continuous("Pr(edge chamber)\n(posterior mean + 95% HDI)", 
+                     limits=c(-0.05, NA), breaks=seq(0,1,by=0.2)) +
+  facet_grid(SpeciesFull~Chamber) +
+  theme_classic() +
+  theme(panel.border=element_rect(fill=NA),
+        legend.position="bottom", 
+        axis.title.y=element_blank())
+ggsave("figs/pub/1_revision1/prEdge_means+CIs.png", p.Edge_prMnCI, width=7, height=4, dpi=300)
+
+p.ColdWarm_prMnCI <- fit.cw %>%
+  mutate(Chambers=factor(Chambers, levels=c("cold", "warm"), labels=paste(c("Cold", "Warm"), "chambers"))) %>%
+  ggplot(aes(ElapsedDays, pr_mn, ymin=pr_lo, ymax=pr_hi,
+             group=Group, colour=Group, fill=Group)) +
+  geom_hline(yintercept=c(0,1), colour="grey50", size=0.25) +
+  geom_hline(yintercept=c(0.4), colour="grey50", size=0.25) +
+  geom_rect(data=lower_ZT.Grp, fill="white", colour="grey30", size=0.1,
+            aes(ymin=prop_1, ymax=prop_2, xmin=light_1, xmax=light_2)) +
+  geom_rect(data=lower_ZT.Grp, fill="grey30", colour="grey30", size=0.1,
+            aes(ymin=prop_1, ymax=prop_2, xmin=dark_1, xmax=dark_2)) +
+  geom_ribbon(alpha=0.5, colour=NA) + geom_line() +
+  scale_colour_manual(values=group_col) +
+  scale_fill_manual(values=group_col) +
+  scale_x_continuous("Elapsed time (days)", breaks=seq(0,13,by=2)) +
+  scale_y_continuous("Proportion of fish\n(posterior mean + 95% HDI)", 
+                     limits=c(-0.05, NA), breaks=seq(0,1,by=0.2)) +
+  facet_grid(SpeciesFull~Chambers) +
+  theme_classic() +
+  theme(panel.border=element_rect(fill=NA),
+        legend.position="bottom")
+ggsave("figs/pub/1_revision1/prColdWarm_means+CIs.png", p.ColdWarm_MMnCI, width=7, height=5, dpi=300)
+
+ggpubr::ggarrange(p.ColdWarm_prMnCI, p.Edge_prMnCI, ncol=2, legend="bottom", 
+                  common.legend=T, widths=c(1, 0.52), labels="auto")
+ggsave("figs/pub/1_revision1/prColdWarmEdge_pr_means+CIs.png", width=9, height=5.25, dpi=300)
+
+
+p.Edge_MMnCI <- fit.edge %>%
+  mutate(Chamber="Edge chambers") %>%
+  ggplot(aes(ElapsedDays, M_mn, ymin=M_lo, ymax=M_hi,
+             group=Group, colour=Group, fill=Group)) +
+  geom_hline(yintercept=c(0,1), colour="grey50", size=0.25) +
+  geom_hline(yintercept=c(0.4), colour="grey50", size=0.25) +
+  geom_rect(data=lower_ZT.Grp, fill="white", colour="grey30", size=0.1,
+            aes(ymin=prop_1, ymax=prop_2, xmin=light_1, xmax=light_2)) +
+  geom_rect(data=lower_ZT.Grp, fill="grey30", colour="grey30", size=0.1,
+            aes(ymin=prop_1, ymax=prop_2, xmin=dark_1, xmax=dark_2)) +
+  geom_ribbon(alpha=0.5, colour=NA) + geom_line() +
+  scale_colour_manual(values=group_col) +
+  scale_fill_manual(values=group_col) +
+  scale_x_continuous("Elapsed time (days)", breaks=seq(0,13,by=2)) +
+  scale_y_continuous("Pr(edge chamber): MESOR\n(posterior mean + 95% HDI)", 
+                     limits=c(-0.05, NA), breaks=seq(0,1,by=0.2)) +
+  facet_grid(SpeciesFull~Chamber) +
+  theme_classic() +
+  theme(panel.border=element_rect(fill=NA),
+        legend.position="bottom", 
+        axis.title.y=element_blank())
+ggsave("figs/pub/1_revision1/prEdge_M_means+CIs.png", p.Edge_MMnCI, width=7, height=4, dpi=300)
+
+p.ColdWarm_MMnCI <- fit.cw %>%
+  mutate(Chambers=factor(Chambers, levels=c("cold", "warm"), labels=paste(c("Cold", "Warm"), "chambers"))) %>%
+  ggplot(aes(ElapsedDays, M_mn, ymin=M_lo, ymax=M_hi,
+             group=Group, colour=Group, fill=Group)) +
+  geom_hline(yintercept=c(0,1), colour="grey50", size=0.25) +
+  geom_hline(yintercept=c(0.4), colour="grey50", size=0.25) +
+  geom_rect(data=lower_ZT.Grp, fill="white", colour="grey30", size=0.1,
+            aes(ymin=prop_1, ymax=prop_2, xmin=light_1, xmax=light_2)) +
+  geom_rect(data=lower_ZT.Grp, fill="grey30", colour="grey30", size=0.1,
+            aes(ymin=prop_1, ymax=prop_2, xmin=dark_1, xmax=dark_2)) +
+  geom_ribbon(alpha=0.5, colour=NA) + geom_line() +
+  scale_colour_manual(values=group_col) +
+  scale_fill_manual(values=group_col) +
+  scale_x_continuous("Elapsed time (days)", breaks=seq(0,13,by=2)) +
+  scale_y_continuous("Proportion of fish: MESOR\n(posterior mean + 95% HDI)", 
+                     limits=c(-0.05, NA), breaks=seq(0,1,by=0.2)) +
+  facet_grid(SpeciesFull~Chambers) +
+  theme_classic() +
+  theme(panel.border=element_rect(fill=NA),
+        legend.position="bottom")
+ggsave("figs/pub/1_revision1/prColdWarm_M_means+CIs.png", p.ColdWarm_MMnCI, width=7, height=5, dpi=300)
+
+ggpubr::ggarrange(p.ColdWarm_MMnCI, p.Edge_MMnCI, ncol=2, legend="bottom", 
+                  common.legend=T, widths=c(1, 0.52), labels="auto")
+ggsave("figs/pub/1_revision1/prColdWarmEdge_M_means+CIs.png", width=9, height=5.25, dpi=300)
+
+
+
+
 
 p.N_M <- fit.N %>%
   mutate(Chamber=paste("Chamber", Chamber)) %>%
@@ -241,16 +353,16 @@ p.Temp2 <- ggplot(fit.temp_global, aes(ElapsedDays, pred, colour=Species, fill=S
   # geom_hline(yintercept=temp_ctrl[1], colour=sp_col[1], linetype=5, size=0.1) +
   # geom_hline(yintercept=temp_ctrl[2], colour=sp_col[2], linetype=5, size=0.1) +
   geom_point(data=map_dfr(data.df, ~filter(.x, Group!="Control"), .id="Species"), 
-             aes(y=prefTemp, shape=Tank), alpha=0.25) +
-  geom_ribbon(aes(ymin=pred_lo, ymax=pred_hi), alpha=0.2, colour=NA) +
+             aes(y=prefTemp, shape=Tank), alpha=0.5, size=0.8) +
+  geom_ribbon(aes(ymin=pred_lo, ymax=pred_hi), alpha=0.25, colour=NA) +
   geom_line(aes(size=Spline)) +
-  geom_line(data=fit.temp_tank, aes(group=paste(Species, Tank), linetype=Tank), size=0.3) +
+  geom_line(data=fit.temp_tank, aes(group=paste(Species, Tank)), size=0.3) +
   scale_x_continuous("Elapsed time (days)", breaks=seq(0,13,by=2), limits=c(0,13)) + 
   scale_colour_manual(values=sp_col) +
   scale_fill_manual(values=sp_col) +
   scale_size_manual(values=c(1, 0.5), drop=F) + 
   scale_shape_manual(values=1:3) +
-  guides(shape=guide_legend(override.aes=list(alpha=1)),
+  guides(shape=guide_legend(override.aes=list(alpha=1, size=1), order=3),
          colour=guide_legend(order=1),
          fill=guide_legend(order=1),
          size=guide_legend(order=2)) +
@@ -274,12 +386,88 @@ ggpubr::ggarrange(p.M, p.A, p.phi, ncol=1, nrow=3,
 ggsave("figs/pub/1_revision1/prefTemp_ALT_cosinorPars.png", width=4, height=10, dpi=300)
 
 
-fit.temp_global %>% filter(ElapsedDays %in% c(0,5,13)) %>% 
+
+
+
+
+
+
+
+# values ------------------------------------------------------------------
+
+# Acrophase
+fit.temp_global %>% filter(ElapsedDays %in% c(0,7)) %>% 
+  select(Species, ElapsedDays, starts_with("acrophase"))
+
+# Average daily max/min preferred temp
+fit.temp_global %>% filter(ElapsedDays>=7) %>% 
+  group_by(Species, Days) %>%
+  filter(pred==max(pred)) %>%
+  group_by(Species) %>%
+  summarise(across(starts_with("pred"), mean))
+fit.temp_global %>% filter(ElapsedDays>=7) %>% 
+  group_by(Species, Days) %>%
+  filter(pred==min(pred)) %>%
+  group_by(Species) %>%
+  summarise(across(starts_with("pred"), mean))
+fit.temp_global %>% filter(ElapsedDays>=7) %>% 
+  group_by(Species, Days) %>%
+  arrange(pred) %>%
+  mutate(diff=last(pred)-first(pred)) %>%
+  slice_head(n=1) %>%
+  group_by(Species) %>%
+  summarise(diff=mean(diff))
+
+# MESOR
+fit.temp_global %>% filter(ElapsedDays==0) %>% 
+  group_by(Species) %>%
+  summarise(across(starts_with("pred"), mean))
+fit.temp_global %>% filter(ElapsedDays>=7) %>% 
+  group_by(Species) %>%
+  summarise(across(starts_with("pred"), mean))
+
+tau <- map(dir("out", "GS_predGlobal_posterior", full.names=T),
+           ~readRDS(.x)$prefTemp)
+day0 <- which(fit.temp_global$ElapsedDays==0)
+day4 <- which(fit.temp_global$ElapsedDays==4)
+acc_diff <- map(1:2, ~tau[[.x]][,day0[1]] - tau[[.x]][,day4[1]])
+map(acc_diff, mean)
+map(acc_diff, HDInterval::hdi)
+
+
+
+# Fish proportions --------------------------------------------------------
+
+fit.N %>%
+  mutate(Days=floor(ElapsedDays)) %>%
+  filter(ElapsedDays >= 7) %>%
+  group_by(Group, Species, Chamber, Days) %>% 
+  arrange(desc(pr_mn)) %>%
+  slice_head(n=1) %>%
+  group_by(Group, Species, Chamber) %>%
+  summarise(across(starts_with("pr"), mean), ZT=mean((ElapsedDays %% 1)*24))
+
+fit.N %>%
+  mutate(Days=floor(ElapsedDays)) %>%
+  filter(ElapsedDays < 1) %>%
+  group_by(Group, Species, Chamber, Days) %>% 
+  arrange(desc(pr_mn)) %>%
+  slice_head(n=1) %>%
+  group_by(Group, Species, Chamber) %>%
+  summarise(across(starts_with("pr"), mean), ZT=mean((ElapsedDays %% 1)*24))
+  
+
+fit.N %>%
+  filter(Group=="Control CTE") %>%
+  group_by(Species, Chamber) %>%
+  summarise(across(starts_with("pr"), mean), across(starts_with("M"), mean))
+
+
+
+fit.temp_global %>% filter(ElapsedDays %in% c(0,7)) %>% 
   select(Species, ElapsedDays, starts_with("M"))
-fit.temp_global %>% filter(ElapsedDays %in% c(0,3)) %>% 
-  select(Species, ElapsedDays, starts_with("A"))
-fit.temp_global %>% filter(ElapsedDays %in% c(0,3)) %>% 
-  select(Species, ElapsedDays, starts_with("phi"))
+fit.temp_global %>% filter(ElapsedDays %in% c(0,7)) %>% 
+  select(Species, ElapsedDays, starts_with("amplitude"))
 
 
 

@@ -8,11 +8,11 @@
 
 # switches ----------------------------------------------------------------
 
-species <- c("Zebrafish"="ZF", "Nile tilapia"="Tilapia")[2]
-iter <- 4000
+species <- c("Zebrafish"="ZF", "Nile tilapia"="Tilapia")[1]
+iter <- 5000
 warmup <- 2000
 chains <- 4
-stan_args <- list(adapt_delta=0.9, max_treedepth=20)
+stan_args <- list(adapt_delta=0.95, max_treedepth=20)
 
 
 
@@ -186,12 +186,15 @@ pred.df <- pred.tank %>%
          acrophase_hi=hdis.tank$acrophase[2,]) %>%
   mutate(Tank=factor(Tank))
 
-pred.df %>% 
-  mutate(Species=names(species)) %>%
-  write_csv(glue("out/GS_predTank_{species}.csv"))
+
 pred_mu.df %>% 
   mutate(Species=names(species)) %>%
   write_csv(glue("out/GS_predGlobal_{species}.csv"))
+pred.df %>% 
+  mutate(Species=names(species)) %>%
+  write_csv(glue("out/GS_predTank_{species}.csv"))
+saveRDS(smooths_GS, glue("out/GS_predGlobal_posterior_{species}.rds"))
+saveRDS(pred.ls, glue("out/GS_predTank_posterior_{species}.rds"))
 
 # 
 # 

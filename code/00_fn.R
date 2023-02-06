@@ -92,5 +92,9 @@ summarise_N_posteriors <- function(out, newdata) {
            phi_hi=c(post_phi_hdi[2,,]),
            Group=newdata$Group[1],
            Species=newdata$Species[1])
-  return(fit.df)
+  return(list(summaries=fit.df, 
+              pr.post=post_pr.ar, 
+              M.post=post_M.ar, 
+              A.post=post_A.ar, 
+              phi.post=post_phi.ar))
 }
