@@ -43,7 +43,8 @@ lower_ZT.Grp <- bind_rows(
          amp_1=0, amp_2=0.025,
          acro_1=0, acro_2=0.4,
          prop_1=-0.05, prop_2=-0.02,
-         ElapsedDays=0, pred=30, M=30, M_mn=0, amplitude=0, acrophase=12, pr_mn=0),
+         ElapsedDays=0, ElapsedTime=0, pred=30, propFish=0,
+         M=30, M_mn=0, amplitude=0, acrophase=12, pr_mn=0),
   tibble(Group="Control CTE",
          light_1=0:5,
          light_2=c(0:5)+0.5,
@@ -54,7 +55,8 @@ lower_ZT.Grp <- bind_rows(
          amp_1=0, amp_2=0.025,
          acro_1=0, acro_2=0.4,
          prop_1=-0.05, prop_2=-0.02,
-         ElapsedDays=0, pred=30, M=30, M_mn=0, amplitude=0, acrophase=12, pr_mn=0))
+         ElapsedDays=0, ElapsedTime=0, pred=30, propFish=0,
+         M=30, M_mn=0, amplitude=0, acrophase=12, pr_mn=0))
 
 data.df <- map(species, 
                ~readxl::read_xlsx(dir("data", glue("{.x}_.*RawData2"), full.names=T),
@@ -74,6 +76,32 @@ data.df <- map(species,
                  mutate(ElapsedTime=ZT+24*(Days-1)+24*3*(Group=="Experiment"),
                         ElapsedDays=ElapsedTime/24))
 
+dataN.df <- map(species,
+                ~readxl::read_xlsx(dir("data", glue("{.x}_.*RawData2"), full.names=T),
+                                   1, col_types=c(rep("numeric", 6), "skip", "skip")) %>%
+                  mutate(ln_FishCount=log(FishCount+1),
+                         cos_ZT=cos(2*pi*ZT/24),
+                         sin_ZT=sin(2*pi*ZT/24),
+                         Chamber=factor(Chamber),
+                         Group=factor(Group, 
+                                      levels=c(3, 1, 2), 
+                                      labels=c("Control", "Acclimation", "Experiment")),
+                         Tank=factor(Tank)) %>%
+                  left_join(read_csv(glue("data/temp_{.x}.csv")) %>%
+                              pivot_longer(starts_with("chamber_"), names_to="Chamber", values_to="Temp") %>%
+                              mutate(Chamber=factor(str_sub(Chamber, -1, -1)),
+                                     Group=factor(Group, levels=c("Control", "Acclimation", "Experiment")))) %>%
+                  mutate(GrpDay=factor(paste(as.numeric(Group), str_pad(Days, 2, "l", "0"), sep="_"))) %>%
+                  mutate(ElapsedTime=ZT+24*(Days-1)+24*3*(Group=="Experiment")) %>%
+                  filter(complete.cases(.)) %>%
+                  mutate(Group=if_else(Group=="Control", "Control CTE", "Experiment"),
+                         Tank=paste("Tank", Tank)) %>%
+                  group_by(Group, Tank, ElapsedTime) %>%
+                  mutate(propFish=FishCount/sum(FishCount)) %>%
+                  ungroup %>%
+                  select(Group, Tank, ElapsedTime, ZT, Chamber, propFish))
+
+
 fit.N <- map_dfr(species, ~read_csv(glue("out/GS_predGlobal_NChmbr_{.x}.csv"))) %>%
   mutate(Chamber=factor(Chamber),
          Group=factor(Group, levels=c("Control", "Experimental"), labels=c("Control CTE", "Experiment")),
@@ -90,6 +118,28 @@ fit.temp_global <- map_dfr(species, ~read_csv(glue("out/GS_predGlobal_{.x}.csv")
   mutate(Spline=factor("Global", levels=c("Global", "Tank")))
 fit.temp_tank <- map_dfr(species, ~read_csv(glue("out/GS_predTank_{.x}.csv"))) %>%
   mutate(Tank=factor(Tank))
+
+
+# Observed
+obs.prop.ls <- imap(dataN.df,
+                   ~ggplot(.x, aes(ElapsedTime/24, propFish, fill=Chamber)) + 
+                     geom_hline(yintercept=c(0,1), colour="grey50", size=0.25) +
+                     geom_hline(yintercept=c(0.2,0.4,0.6,0.8), colour="grey50", size=0.25) +
+                     geom_rect(data=lower_ZT.Grp, fill="white", colour="grey30", size=0.1,
+                               aes(ymin=prop_1, ymax=prop_2, xmin=light_1, xmax=light_2)) +
+                     geom_rect(data=lower_ZT.Grp, fill="grey30", colour="grey30", size=0.1,
+                               aes(ymin=prop_1, ymax=prop_2, xmin=dark_1, xmax=dark_2)) +
+                     geom_area(colour="grey30", size=0.2) +
+                     scale_fill_manual(values=chmb_col) +
+                     scale_x_continuous("Elapsed time (days)", breaks=seq(0,13,by=2)) +
+                     scale_y_continuous("Observed fish distribution", breaks=seq(0,1,by=0.2)) +
+                     ggtitle(.y) +
+                     facet_grid(Tank~Group, scales="free_x", space="free_x") +
+                     theme_bw() +
+                     theme(panel.grid=element_blank(),
+                           legend.position="bottom"))
+iwalk(obs.prop.ls, 
+      ~ggsave(glue("figs/obs_chProp_{.y}.png"), .x, width=8, height=5, dpi=300))
 
 
 

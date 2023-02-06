@@ -8,7 +8,7 @@
 
 # switches ----------------------------------------------------------------
 
-species <- c("ZF", "Tilapia")[2]
+species <- c("Zebrafish"="ZF", "Nile tilapia"="Tilapia")[2]
 iter <- 4000
 warmup <- 2000
 chains <- 4
@@ -61,7 +61,8 @@ data.noNA %>%
   theme_bw()
 
 data.noNA %>%
-  mutate(Group=if_else(Group=="Control", "Control", "Experiment")) %>%
+  mutate(Group=if_else(Group=="Control", "Control", "Experiment"),
+         Tank=paste("Tank", Tank)) %>%
   group_by(Group, Tank, ElapsedTime) %>%
   mutate(propFish=FishCount/sum(FishCount)) %>%
   ungroup %>%
@@ -70,9 +71,14 @@ data.noNA %>%
   ggplot(aes(ElapsedTime/24, propFish, fill=Chamber)) + 
   geom_area() +
   scale_fill_manual(values=chmb_col) +
-  scale_x_continuous("Elapsed time (days)", breaks=0:13) +
+  scale_x_continuous("Elapsed time (days)", breaks=seq(0,13,by=2)) +
+  scale_y_continuous("Observed fish distribution", breaks=seq(0,1,by=0.2)) +
+  ggtitle(names(species)) +
   facet_grid(Tank~Group, scales="free_x", space="free_x") +
-  theme_bw()
+  theme_bw() +
+  theme(panel.grid.minor.x=element_blank(),
+        panel.grid.minor.y=element_blank(),
+        legend.position="bottom")
 
 
 # dirichlet trial ---------------------------------------------------------
