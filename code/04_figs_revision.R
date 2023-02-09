@@ -17,10 +17,10 @@ group_col <- lisa_palette("GustavKlimt", 5)[c(2,4)] %>%
 group_raw <- c("Control", "Acclimation", "Experiment")
 chmb_col <- c("1"="#0571b0", "2"="#92c5de", "3"="grey", "4"="#f4a582", "5"="#ca0020")
 cmr.ls <- readRDS("figs/cmr_cmaps.RDS")
-sp_col <- c("Nile tilapia"="#1a3431", "Zebrafish"="#6283c8")
-species <- c("Nile tilapia"="Tilapia", "Zebrafish"="ZF")
-temp_rng <- list(Tilapia=c(25.5, 34.5), ZF=c(24, 31.5))
-temp_ctrl <- c(Tilapia=30.1, ZF=26.4)
+sp_col <- c("Zebrafish"="#6283c8", "Nile tilapia"="#1a3431")
+species <- c("Zebrafish"="ZF", "Nile tilapia"="Tilapia")
+temp_rng <- list(ZF=c(24, 31.5), Tilapia=c(25.5, 34.5))
+temp_ctrl <- c(ZF=26.4, Tilapia=30.1)
 
 lower_ZT.df <- tibble(light_1=0:12,
                       light_2=c(0:12)+0.5,
@@ -93,13 +93,44 @@ dataN.df <- map(species,
                                      Group=factor(Group, levels=c("Control", "Acclimation", "Experiment")))) %>%
                   mutate(GrpDay=factor(paste(as.numeric(Group), str_pad(Days, 2, "l", "0"), sep="_"))) %>%
                   mutate(ElapsedTime=ZT+24*(Days-1)+24*3*(Group=="Experiment")) %>%
-                  filter(complete.cases(.)) %>%
+                  # filter(complete.cases(.)) %>%
                   mutate(Group=if_else(Group=="Control", "Control CTE", "Experiment"),
                          Tank=paste("Tank", Tank)) %>%
                   group_by(Group, Tank, ElapsedTime) %>%
                   mutate(propFish=FishCount/sum(FishCount)) %>%
                   ungroup %>%
-                  select(Group, Tank, ElapsedTime, ZT, Chamber, propFish))
+                  select(Group, Tank, ElapsedTime, ZT, Chamber, propFish) %>%
+                  arrange(Group, Tank, Chamber, ElapsedTime) %>%
+                  group_by(Group, Tank, Chamber) %>%
+                  mutate(Chunk=cumsum(is.na(propFish))) %>%
+                  ungroup %>%
+                  filter(complete.cases(.), ElapsedTime < (24*13)))
+
+c_temp.sum <- map_dfr(species, 
+                      ~read_csv(dir("repository_pub", glue("{.x}_RawData.csv"), full.names=T)) %>%
+                        mutate(FishCount=na_if(FishCount, -1)) %>%
+                        mutate(ln_FishCount=log(FishCount+1),
+                               cos_ZT=cos(2*pi*ZT/24),
+                               sin_ZT=sin(2*pi*ZT/24),
+                               Chamber=factor(Chamber),
+                               Group=factor(Group, levels=c(3, 1, 2), labels=group_raw),
+                               Tank=factor(Tank)) %>%
+                        left_join(read_csv(dir("repository_pub", glue("temperature_{.x}.csv"), full.names=T)) %>%
+                                    pivot_longer(starts_with("chamber_"), names_to="Chamber", values_to="Temp") %>%
+                                    mutate(Chamber=factor(str_sub(Chamber, -1, -1)),
+                                           Group=factor(Group, 
+                                                        levels=group_raw))) %>%
+                        mutate(GrpDay=factor(paste(as.numeric(Group), str_pad(Days, 2, "l", "0"), sep="_"))) %>% 
+                        mutate(Group=ifelse(Group=="Control", "Control CTE", "Experiment")) %>%
+                        group_by(Group, Chamber) %>% 
+                        summarise(Temp=mean(Temp, na.rm=T)), 
+                      .id="SpeciesFull") %>%
+  mutate(M_lo=0, M_mn=0.85, M_hi=0, ElapsedDays=11.5,
+         TempRnd=paste0(format(Temp, digits=3), "\u00B0C"),
+         Chamber=paste("Chamber", Chamber)) %>%
+  mutate(M_mn=M_mn+(Group=="Control CTE")*0.1,
+         SpeciesFull=factor(SpeciesFull, levels=names(species)),
+         pr_mn=M_mn, pr_lo=M_lo, pr_hi=M_hi)
 
 
 fit.N <- map_dfr(species, ~read_csv(glue("out/GS_predGlobal_NChmbr_{.x}.csv"))) %>%
@@ -129,7 +160,7 @@ obs.prop.ls <- imap(dataN.df,
                                aes(ymin=prop_1, ymax=prop_2, xmin=light_1, xmax=light_2)) +
                      geom_rect(data=lower_ZT.Grp, fill="grey30", colour="grey30", size=0.1,
                                aes(ymin=prop_1, ymax=prop_2, xmin=dark_1, xmax=dark_2)) +
-                     geom_area(colour="grey30", size=0.2) +
+                     geom_area(colour="grey30", size=0.2, aes(group=paste(Chamber, Chunk))) +
                      scale_fill_manual(values=chmb_col) +
                      scale_x_continuous("Elapsed time (days)", breaks=seq(0,13,by=2)) +
                      scale_y_continuous("Observed fish distribution", breaks=seq(0,1,by=0.2)) +
@@ -139,7 +170,7 @@ obs.prop.ls <- imap(dataN.df,
                      theme(panel.grid=element_blank(),
                            legend.position="bottom"))
 iwalk(obs.prop.ls, 
-      ~ggsave(glue("figs/obs_chProp_{.y}.png"), .x, width=8, height=5, dpi=300))
+      ~ggsave(glue("figs/pub/1_revision1/obs_chProp_{.y}.png"), .x, width=8, height=5, dpi=300))
 
 
 
@@ -172,6 +203,7 @@ p.N_prMnCI <- fit.N %>%
   geom_rect(data=lower_ZT.Grp, fill="grey30", colour="grey30", size=0.1,
             aes(ymin=prop_1, ymax=prop_2, xmin=dark_1, xmax=dark_2)) +
   geom_ribbon(alpha=0.5, colour=NA) + geom_line() +
+  geom_text(data=c_temp.sum, size=2.5, aes(label=TempRnd), show.legend=F) +
   scale_colour_manual(values=group_col) +
   scale_fill_manual(values=group_col) +
   scale_x_continuous("Elapsed time (days)", breaks=seq(0,13,by=2)) +
@@ -227,7 +259,7 @@ p.ColdWarm_prMnCI <- fit.cw %>%
   theme_classic() +
   theme(panel.border=element_rect(fill=NA),
         legend.position="bottom")
-ggsave("figs/pub/1_revision1/prColdWarm_means+CIs.png", p.ColdWarm_MMnCI, width=7, height=5, dpi=300)
+ggsave("figs/pub/1_revision1/prColdWarm_means+CIs.png", p.ColdWarm_prMnCI, width=7, height=5, dpi=300)
 
 ggpubr::ggarrange(p.ColdWarm_prMnCI, p.Edge_prMnCI, ncol=2, legend="bottom", 
                   common.legend=T, widths=c(1, 0.52), labels="auto")
@@ -286,7 +318,6 @@ ggsave("figs/pub/1_revision1/prColdWarmEdge_M_means+CIs.png", width=9, height=5.
 
 
 
-
 p.N_M <- fit.N %>%
   mutate(Chamber=paste("Chamber", Chamber)) %>%
   ggplot(aes(ElapsedDays, M_mn, ymin=M_lo, ymax=M_hi,
@@ -298,6 +329,7 @@ p.N_M <- fit.N %>%
   geom_rect(data=lower_ZT.Grp, fill="grey30", colour="grey30", size=0.1,
             aes(ymin=prop_1, ymax=prop_2, xmin=dark_1, xmax=dark_2)) +
   geom_ribbon(alpha=0.5, colour=NA) + geom_line() +
+  geom_text(data=c_temp.sum, size=2.5, aes(label=TempRnd), show.legend=F) +
   scale_colour_manual("", values=group_col) +
   scale_fill_manual("", values=group_col) +
   scale_x_continuous("Elapsed time (days)", breaks=seq(0,13,by=2)) +
@@ -309,6 +341,7 @@ p.N_M <- fit.N %>%
         legend.position="bottom", 
         legend.title=element_blank())
 ggsave("figs/pub/1_revision1/propFishByChamber_M_means+CIs.png", p.N_M, width=9, height=4, dpi=300)
+
 
 
 
@@ -431,7 +464,7 @@ p.legend <- p.M +
   guides(colour=guide_legend(order=1, ncol=1),
          fill=guide_legend(order=1, ncol=1),
          size=guide_legend(order=2, ncol=1))
-ggpubr::ggarrange(p.M, p.A, p.phi, ncol=1, nrow=3, 
+ggpubr::ggarrange(p.phi, p.M, p.A, ncol=1, nrow=3, 
                   legend.grob=ggpubr::get_legend(p.legend), legend="bottom", labels="auto")
 ggsave("figs/pub/1_revision1/prefTemp_ALT_cosinorPars.png", width=4, height=10, dpi=300)
 
