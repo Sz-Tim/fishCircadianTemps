@@ -7,7 +7,7 @@
 
 
 setwd("repository_pub")
-mkdir("out")
+dir.create("out")
 # switches ----------------------------------------------------------------
 
 species <- c("Zebrafish"="ZF", "Nile tilapia"="Tilapia")[1]
