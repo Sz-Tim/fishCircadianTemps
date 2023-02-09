@@ -42,8 +42,8 @@ data.df <- data.df %>%
   select(Group, Tank, ElapsedTime_sc, ZT, Chamber, propFish) %>%
   pivot_wider(names_from=Chamber, values_from=propFish) %>%
   mutate(Y=cbind(Ch_1=Ch_1, Ch_2=Ch_2, Ch_3=Ch_3, Ch_4=Ch_4, Ch_5=Ch_5))
-write_csv(data.df, glue("out/chmbrComp_data_{species}.csv"))
-saveRDS(time_sc, glue("out/chmbrComp_timeScale_{species}.csv"))
+saveRDS(data.df, glue("out/chmbrComp_data_{species}.rds"))
+saveRDS(time_sc, glue("out/chmbrComp_timeScale_{species}.rds"))
 
 
 

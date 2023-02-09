@@ -20,8 +20,8 @@ library(brms)
 library(glue)
 source("00_fn.R")
 
-data.df <- read_csv(glue("out/chmbrComp_data_{species}.csv"))
-time_sc <- readRDS(glue("out/chmbrComp_timeScale_{species}.csv"))
+data.df <- readRDS(glue("out/chmbrComp_data_{species}.rds"))
+time_sc <- readRDS(glue("out/chmbrComp_timeScale_{species}.rds"))
 
 out.exp <- readRDS(glue("out/chmbrComp_mod_exp_{species}"))
 out.ctrl <- readRDS(glue("out/chmbrComp_mod_ctrl_{species}"))

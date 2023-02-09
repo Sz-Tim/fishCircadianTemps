@@ -42,7 +42,7 @@ data.df <- data.df %>%
   mutate(ElapsedTime_sc=c(time_sc)) %>% 
   filter(complete.cases(.))
 write_csv(data.df, glue("out/prefTemp_data_{species}.csv"))
-saveRDS(time_sc, glue("out/prefTemp_timeScale_{species}.csv"))
+saveRDS(time_sc, glue("out/prefTemp_timeScale_{species}.rds"))
 
 
 

@@ -21,7 +21,7 @@ library(glue)
 source("00_fn.R")
 
 data.df <- read_csv(glue("out/prefTemp_data_{species}.csv"))
-time_sc <- readRDS(glue("out/prefTemp_timeScale_{species}.csv"))
+time_sc <- readRDS(glue("out/prefTemp_timeScale_{species}.rds"))
 
 out <- readRDS(glue("out/prefTemp_mod_{species}.rds"))
 
