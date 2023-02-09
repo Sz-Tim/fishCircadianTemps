@@ -23,7 +23,7 @@ stan_args <- list(adapt_delta=0.95, max_treedepth=20)
 library(tidyverse)
 library(brms)
 library(glue)
-source("code/00_fn.R")
+source("00_fn.R")
 
 data.df <- read_csv(glue("{species}_RawData.csv")) %>%
   mutate(FishCount=na_if(FishCount, -1),
