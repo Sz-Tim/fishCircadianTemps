@@ -5,8 +5,6 @@
 
 
 
-
-setwd("repository_pub")
 # switches ----------------------------------------------------------------
 
 species <- c("Zebrafish"="ZF", "Nile tilapia"="Tilapia")[1]
@@ -23,10 +21,8 @@ source("00_fn.R")
 data.df <- readRDS(glue("out/chmbrComp_data_{species}.rds"))
 time_sc <- readRDS(glue("out/chmbrComp_timeScale_{species}.rds"))
 
-out.exp <- readRDS(glue("out/chmbrComp_mod_exp_{species}"))
-out.ctrl <- readRDS(glue("out/chmbrComp_mod_ctrl_{species}"))
-
-
+out.exp <- readRDS(glue("out/chmbrComp_mod_exp_{species}.rds"))
+out.ctrl <- readRDS(glue("out/chmbrComp_mod_ctrl_{species}.rds"))
 
 
 
@@ -53,6 +49,7 @@ fit.ls <- list(
   exp=summarise_N_posteriors(out.exp, fit.exp),
   ctrl=summarise_N_posteriors(out.ctrl, fit.ctrl)
 )
+saveRDS(fit.ls, glue("out/chmbrComp_posteriorGlobal_{species}.rds"))
 fit.df <- rbind(fit.ls$exp$summaries,
                 fit.ls$ctrl$summaries)
 pr.post <- list(exp=fit.ls$exp$pr.post,
@@ -69,6 +66,7 @@ write_csv(fit.df, glue("out/chmbrComp_predGlobal_{species}.csv"))
 
 fit.dat <- bind_rows(fit.exp, fit.ctrl)
 
+# Edge chambers (1, 5)
 pr.edge <- array(dim=c(dim(pr.post$exp)[1], 
                        dim(pr.post$exp)[2]+dim(pr.post$ctrl)[2],
                        2))
@@ -93,7 +91,7 @@ edge.df <- fit.dat %>%
          M_hi=HDInterval::hdi(M.edge[,,1])[2,])
 write_csv(edge.df, glue("out/chmbrComp_predEdge_{species}.csv"))
 
-
+# Cold chambers (1,2) and warm chambers (4,5)
 pr.cw <- array(dim=c(dim(pr.post$exp)[1], 
                      dim(pr.post$exp)[2]+dim(pr.post$ctrl)[2],
                      2))

@@ -5,8 +5,6 @@
 
 
 
-
-setwd("repository_pub")
 dir.create("out")
 # switches ----------------------------------------------------------------
 
@@ -33,18 +31,21 @@ data.df <- read_csv(glue("{species}_RawData.csv")) %>%
 time_sc <- scale(data.df$ElapsedTime)
 data.df <- data.df %>%
   mutate(ElapsedTime_sc=c(time_sc)) %>% 
-  filter(complete.cases(.)) %>%
   group_by(Group, Tank, ElapsedTime_sc) %>%
   mutate(FishCount=FishCount+0.001,
          propFish=FishCount/sum(FishCount),
          Chamber=paste0("Ch_", Chamber)) %>%
   ungroup %>%
-  select(Group, Tank, ElapsedTime_sc, ZT, Chamber, propFish) %>%
+  select(Group, Tank, ElapsedTime, ElapsedTime_sc, ZT, Chamber, propFish) %>%
+  arrange(Group, Tank, Chamber, ElapsedTime) %>%
+  group_by(Group, Tank, Chamber) %>%
+  mutate(Chunk=cumsum(is.na(propFish))) %>% # for plotting
+  ungroup %>%
+  filter(complete.cases(.)) %>%
   pivot_wider(names_from=Chamber, values_from=propFish) %>%
   mutate(Y=cbind(Ch_1=Ch_1, Ch_2=Ch_2, Ch_3=Ch_3, Ch_4=Ch_4, Ch_5=Ch_5))
 saveRDS(data.df, glue("out/chmbrComp_data_{species}.rds"))
 saveRDS(time_sc, glue("out/chmbrComp_timeScale_{species}.rds"))
-
 
 
 

@@ -5,11 +5,9 @@
 
 
 
-
-setwd("repository_pub")
 # switches ----------------------------------------------------------------
 
-species <- c("Zebrafish"="ZF", "Nile tilapia"="Tilapia")[1]
+species <- c("Zebrafish"="ZF", "Nile tilapia"="Tilapia")[2]
 
 
 
@@ -57,14 +55,13 @@ s_global$prefTemp <- calc_prefTemp(s_global$M, s_global$A, s_global$phi,
                                    matrix(global.df$ZT, nrow=nrow(s_global$M), ncol=nrow(global.df), byrow=T))
 # Tank
 s_tank  <- list(
-  prefTemp=posterior_epred(out, newdata=pred.tank, re_formula=NULL),
-  M=posterior_epred(out, newdata=pred.tank, re_formula=NULL, nlpar="M"),
-  A=posterior_epred(out, newdata=pred.tank, re_formula=NULL, nlpar="A"),
-  phi=posterior_epred(out, newdata=pred.tank, re_formula=NULL, nlpar="phi")
+  prefTemp=posterior_epred(out, newdata=tank.df, re_formula=NULL),
+  M=posterior_epred(out, newdata=tank.df, re_formula=NULL, nlpar="M"),
+  A=posterior_epred(out, newdata=tank.df, re_formula=NULL, nlpar="A"),
+  phi=posterior_epred(out, newdata=tank.df, re_formula=NULL, nlpar="phi")
 )
 s_tank$amplitude <- exp(s_tank$A)
 s_tank$acrophase <- phi_to_ZT(s_tank$phi)
-
 
 
 
@@ -112,10 +109,10 @@ tank.df <- tank.df %>%
 # store output ------------------------------------------------------------
 
 global.df %>% 
-  mutate(Species=names(species)) %>%
+  mutate(Species=species) %>%
   write_csv(glue("out/prefTemp_predGlobal_{species}.csv"))
 tank.df %>% 
-  mutate(Species=names(species)) %>%
+  mutate(Species=species) %>%
   write_csv(glue("out/prefTemp_predTank_{species}.csv"))
 saveRDS(s_global, glue("out/prefTemp_posteriorGlobal_{species}.rds"))
 saveRDS(s_tank, glue("out/prefTemp_posteriorTank_{species}.rds"))
