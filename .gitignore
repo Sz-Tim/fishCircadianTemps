@@ -1,5 +1,6 @@
 # History files
 .Rhistory
+*.Rhistory
 .Rapp.history
 
 # Session Data files
@@ -10,6 +11,16 @@
 
 # Misc.
 .DS_Store
+*.zip
+/docs/*
+/models/*
+/ms/*
+figs/pub/0_submission1/*
+out/*rds
+out/*stan
+out/chmbrComp*
+out/prefTemp*
+repository_pub/*
 
 # Example code in package build process
 *-Ex.R
