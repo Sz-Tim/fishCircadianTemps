@@ -2,6 +2,8 @@
 **Luisa M. Vera, Gonzalo de Alba, Silvere Santos, Tim M. Szewczyk, Simon A. Mackenzie, Francisco J. Sánchez-Vázquez, Sonia Rey-Planellas. _Journal of Thermal Biology_, 2023**
 
 
+[![DOI](https://zenodo.org/badge/494023087.svg)](https://zenodo.org/badge/latestdoi/494023087)
+
 The final code and datasets associated with this manuscript are available from the journal website and data dryad. This repository hosts all files, in addition to the development history. 
 
 
